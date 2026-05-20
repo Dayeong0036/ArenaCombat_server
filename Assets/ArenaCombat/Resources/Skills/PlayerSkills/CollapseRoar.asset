@@ -1,0 +1,29 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a193f29c932883b4ba06b526288ee2f4, type: 3}
+  m_Name: CollapseRoar
+  m_EditorClassIdentifier: Assembly-CSharp::SkillDefinition
+  SkillId: CollapseRoar
+  DisplayName: "붕괴 포효"
+  Description: "자기 중심 범위 공격. 좁은 범위 우선(피해+방어력감소), 빗나가면 광역."
+  Icon: {fileID: 0}
+  Cooldown: 10
+  Range: 27
+  TargetType: 1
+  RoleTags:
+  - 9
+  - 16
+  - 12
+  CounterTags:
+  - 15
+  AIHint_ConeOrAoE: 12
+  AIHint_Category: 2

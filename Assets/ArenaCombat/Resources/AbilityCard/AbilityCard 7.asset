@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0606cc0234635b741b1ff737732ccb7c, type: 3}
+  m_Name: AbilityCard 7
+  m_EditorClassIdentifier: Assembly-CSharp::ArenaCombat.Core.Card.AbilityCard
+  cardName: "붕괴 포효"
+  cardIcon: {fileID: 662256610, guid: af40bb445b3267940b9818a64c4a4d04, type: 3}
+  description: CollapseRoar
+  skillDefinition: {fileID: 11400000, guid: adff7f013983d554582a64e2b4970093, type: 2}
+  skillObjectName:

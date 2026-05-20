@@ -1,5 +1,6 @@
 ﻿using ArenaCombat.Core.Network;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 [RequireComponent(typeof(Rigidbody))]
 public class RopeAction : MonoBehaviour
@@ -115,7 +116,7 @@ public class RopeAction : MonoBehaviour
             return;
         }
 
-        if (!Input.GetMouseButtonDown(0))
+        if (Mouse.current == null || !Mouse.current.leftButton.wasPressedThisFrame)
         {
             return;
         }
@@ -137,7 +138,7 @@ public class RopeAction : MonoBehaviour
             direction = transform.forward;
         }
 
-        networkController3D.SubmitRopeIntent(hitPoint, direction.normalized);
+        networkController3D.SubmitRopeIntent(hitPoint, direction.normalized, hasAnchorHint: true);
     }
 
     private void UpdateNetworkRopeLine()
@@ -160,7 +161,7 @@ public class RopeAction : MonoBehaviour
 
     private void HandleStandaloneRopeInput()
     {
-        if (Input.GetMouseButtonDown(0) && !isStandaloneGrappling)
+        if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame && !isStandaloneGrappling)
         {
             StartStandaloneGrapple();
         }
@@ -255,7 +256,13 @@ public class RopeAction : MonoBehaviour
             return false;
         }
 
-        clickRay = aimCamera.ScreenPointToRay(Input.mousePosition);
+        if (Mouse.current == null)
+        {
+            return false;
+        }
+
+        Vector2 mouseScreenPos = Mouse.current.position.ReadValue();
+        clickRay = aimCamera.ScreenPointToRay(new Vector3(mouseScreenPos.x, mouseScreenPos.y, 0f));
         if (!Physics.Raycast(clickRay, out RaycastHit hit, grappleRange, ropeTargetMask, QueryTriggerInteraction.Ignore))
         {
             return false;

@@ -37,17 +37,21 @@ namespace ArenaCombat.Core.Network
 
         [Header("=== Spawn Timing ===")]
         [SerializeField] private bool spawnOnlyInGameScene = true;
-        [SerializeField] private string gameSceneName = "3DScene";
+        [SerializeField] private string gameSceneName = "Chapter1";
 
         [Header("=== 3D Spawn Enforcement ===")]
         [SerializeField] private bool enforce3DController = true;
         [SerializeField] private bool requirePrefabHas3DController = true;
         [SerializeField] private bool allowRuntime3DControllerInjection = false;
-        [SerializeField] private bool removeLegacy2DControllerOnSpawn = true;
+        // D1: removeLegacy2DControllerOnSpawn field removed (legacy 2D cleanup complete)
         [SerializeField] private bool autoAddInputHandlerForOwner = true;
         [SerializeField] private bool autoAddFallbackCapsuleCollider = true;
         [SerializeField] private float fallbackCapsuleHeight = 1.8f;
         [SerializeField] private float fallbackCapsuleRadius = 0.35f;
+
+        [Header("=== Team Assignment (Phase X0-4 / Phase B Followup #1) ===")]
+        [Tooltip("Team assigned to all spawned players. 2P co-op uses Team1; boss spawner (Phase X4) will use Team2. Set to TeamId.None to disable team assignment (legacy behavior with friendly fire — useful for damage-flow testing).")]
+        [SerializeField] private TeamId defaultPlayerTeam = TeamId.Team1;
 
         // Track spawned players by clientId.
         private readonly Dictionary<ulong, NetworkObject> spawnedPlayers = new Dictionary<ulong, NetworkObject>();
@@ -307,7 +311,19 @@ namespace ArenaCombat.Core.Network
             networkObject.SpawnAsPlayerObject(clientId);
             spawnedPlayers[clientId] = networkObject;
 
-            Debug.Log($"[PlayerSpawnManager] Player spawned for client {clientId} at {spawnPosition}");
+            // X0-4: assign team after spawn so CombatManager3D friendly-fire filter works.
+            // SetTeam is server-only; PlayerSpawnManager runs server-authority spawn so this is safe.
+            PlayerNetworkController3D controller = playerInstance.GetComponent<PlayerNetworkController3D>();
+            if (controller != null)
+            {
+                controller.SetTeam(defaultPlayerTeam);
+            }
+            else
+            {
+                Debug.LogWarning($"[PlayerSpawnManager] PlayerNetworkController3D not found on spawned player for client {clientId}; team assignment skipped. Check enforce3DController/requirePrefabHas3DController config.");
+            }
+
+            Debug.Log($"[PlayerSpawnManager] Player spawned for client {clientId} at {spawnPosition} team={defaultPlayerTeam}");
         }
 
         private bool ConfigureSpawnedPlayerFor3D(GameObject playerInstance)
@@ -323,14 +339,6 @@ namespace ArenaCombat.Core.Network
             }
 
             bool changed = false;
-
-            PlayerNetworkController legacy2DController = playerInstance.GetComponent<PlayerNetworkController>();
-            if (legacy2DController != null && removeLegacy2DControllerOnSpawn)
-            {
-                // Must be removed before SpawnAsPlayerObject to avoid duplicate network-controller ownership paths.
-                DestroyImmediate(legacy2DController);
-                changed = true;
-            }
 
             if (playerInstance.GetComponent<PlayerNetworkController3D>() == null)
             {

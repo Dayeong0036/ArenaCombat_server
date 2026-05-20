@@ -173,6 +173,7 @@ namespace ArenaCombat.Core
         public bool TryResolveRopeTarget(
             Vector3 origin,
             Vector3 anchorHint,
+            bool hasAnchorHint,
             Vector3 direction,
             float maxDistance,
             LayerMask anchorMask,
@@ -199,12 +200,12 @@ namespace ArenaCombat.Core
             }
             else
             {
-                candidate = anchorHint;
-                if (candidate == Vector3.zero)
+                if (!hasAnchorHint)
                 {
                     detail = "InvalidAnchorHint";
                     return false;
                 }
+                candidate = anchorHint;
             }
 
             Vector3 toCandidate = candidate - origin;

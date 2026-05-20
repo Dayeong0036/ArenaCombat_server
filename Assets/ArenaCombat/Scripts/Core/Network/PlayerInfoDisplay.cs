@@ -1,6 +1,6 @@
-// ARCH TAG: SHARED
-// ARCH SCOPE: Debug display layer shared; presentation-only helper.
-// ARCH STATUS: TARGET_3D_ACTIVE
+// ARCH TAG: ACTIVE_3D
+// ARCH SCOPE: Debug display (3D only after D1 legacy removal).
+// ARCH STATUS: 3D_ONLY
 
 using Unity.Netcode;
 using UnityEngine;
@@ -24,7 +24,6 @@ namespace ArenaCombat.Core.Network
         [SerializeField] private Color hostColor = Color.yellow;
         [SerializeField] private int fontSize = 14;
 
-        private PlayerNetworkController playerController;
         private PlayerNetworkController3D playerController3D;
         private NetworkObject networkObject;
         private GUIStyle guiStyle;
@@ -32,7 +31,6 @@ namespace ArenaCombat.Core.Network
 
         private void Awake()
         {
-            playerController = GetComponent<PlayerNetworkController>();
             playerController3D = GetComponent<PlayerNetworkController3D>();
             networkObject = GetComponent<NetworkObject>();
         }
@@ -129,25 +127,6 @@ namespace ArenaCombat.Core.Network
                 return $"{ownerLabel}{hostLabel}\n{clientId}{hpInfo3D}{stateInfo3D}{statusInfo3D}{ropeInfo3D}";
             }
 
-            // Legacy 2D fallback display.
-            if (playerController != null)
-            {
-                string hpInfo = $"\nHP: {playerController.CurrentHP:F0}/{playerController.MaxHP:F0}";
-
-                // Add state info
-                string stateInfo = $"\nState: {playerController.CurrentStateId}";
-
-                // Add status info
-                string statusInfo = "";
-                if (playerController.IsParrying) statusInfo += " [PARRY]";
-                if (playerController.IsRoping) statusInfo += " [ROPE]";
-                if (playerController.CurrentStatus != StatusMask.None)
-                {
-                    statusInfo += $" [{playerController.CurrentStatus}]";
-                }
-
-                return $"{ownerLabel}{hostLabel}\n{clientId}{hpInfo}{stateInfo}{statusInfo}";
-            }
 
             return $"{ownerLabel}{hostLabel}\n{clientId}";
         }

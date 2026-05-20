@@ -3,6 +3,7 @@
 // ARCH STATUS: TARGET_3D_PENDING
 
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 public class FollowMouseInstant : MonoBehaviour
 {
@@ -43,7 +44,14 @@ public class FollowMouseInstant : MonoBehaviour
             return;
         }
 
-        Vector3 mousePosition = mainCamera.ScreenToWorldPoint(Input.mousePosition);
+        Mouse mouse = Mouse.current;
+        if (mouse == null)
+        {
+            return;
+        }
+
+        Vector2 screenPos = mouse.position.ReadValue();
+        Vector3 mousePosition = mainCamera.ScreenToWorldPoint(new Vector3(screenPos.x, screenPos.y, 0f));
         mousePosition.z = 0f;
         transform.position = mousePosition;
     }

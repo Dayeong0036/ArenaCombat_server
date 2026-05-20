@@ -5,6 +5,11 @@
 using System;
 using System.Collections.Generic;
 using ArenaCombat.Core;
+using ArenaCombat.Core.Combat;
+using ArenaCombat.Core.AI;
+using ArenaCombat.Core.Skill;
+using ArenaCombat.Core.Stats;
+using ArenaCombat.Core.State;
 using Unity.Netcode;
 using UnityEngine;
 
@@ -18,10 +23,29 @@ namespace ArenaCombat.Core.Network
     [RequireComponent(typeof(NetworkObject))]
     [RequireComponent(typeof(Rigidbody))]
     [RequireComponent(typeof(Collider))]
-    public class PlayerNetworkController3D : NetworkBehaviour
+    [RequireComponent(typeof(StatManager))]      // X3-2
+    [RequireComponent(typeof(StateManager))]     // X3-2
+    [RequireComponent(typeof(SkillExecutor))]    // X3-2
+    [RequireComponent(typeof(SkillManager))]     // X3-2
+    public class PlayerNetworkController3D : NetworkBehaviour, ICombatant
     {
         [Header("=== 3D Movement Settings ===")]
-        [SerializeField] private float maxHP = 100f;
+        [SerializeField] private float maxHP = 150f;
+
+        [Header("=== Stat Authority (X3-3) ===")]
+        // Designer-assigned PlayerStatsSO. Pre-X1-6 SO import: null OK
+        // (StatManager.Initialize handles null → _runtimeStats stays null → safe inert).
+        [SerializeField] private PlayerStatsSO _playerStatsSO;
+        // Cached StatManager ref (RequireComponent ensures existence). Awake assigns.
+        private StatManager _statMgr;
+        // Last damage attacker for Die() killerId carry-through (skill kill attribution).
+        private ulong _lastAttackerId;
+        private System.Action<SkillDefinition, SkillContext> _biasSkillHandler;
+        private System.Action<SkillDefinition, SkillContext> _cooldownSyncHandler;
+
+        [Header("=== BT Agent (C2) ===")]
+        [SerializeField] bool _isBTControlled;
+        public bool IsBTControlled => _isBTControlled;
         [SerializeField] private float moveSpeed = TopDown3DConstants.DEFAULT_MOVE_SPEED;
         [SerializeField] private float rotationLerp = TopDown3DConstants.DEFAULT_ROTATION_LERP;
         [SerializeField] private float inputSendRate = NetworkTickRate.INPUT_SEND_RATE;
@@ -31,11 +55,22 @@ namespace ArenaCombat.Core.Network
         [SerializeField] private float respawnTime = CombatConstants.RESPAWN_TIME;
         [SerializeField] private float invulnerabilityDuration = CombatConstants.INVULNERABILITY_AFTER_SPAWN;
 
+        [Header("=== Initial Loadout (BAL-1) ===")]
+        [Tooltip("매치 시작/재시작 시 slot 0에 자동 장착되는 starter 스킬. 드래프트는 slots 1..4 채움.")]
+        [SerializeField] private ArenaCombat.Core.Skill.SkillDefinition _initialSkillSO;
+        private bool _warnedMissingInitialSkill;
+
         [Header("=== Rope Settings ===")]
         [SerializeField] private float ropeMaxDistance = TopDown3DConstants.DEFAULT_ROPE_MAX_DISTANCE;
         [SerializeField] private float ropeSpeed = TopDown3DConstants.DEFAULT_ROPE_SPEED;
         [SerializeField] private float ropeCooldown = TopDown3DConstants.DEFAULT_ROPE_COOLDOWN;
         [SerializeField] private LayerMask ropeAnchorLayer;
+
+        [Header("=== Parry Settings (3D) ===")]
+        [SerializeField, Min(0f)] private float parryWindowDuration = 0.3f;
+        [SerializeField, Min(0f)] private float parryCooldown = 0.6f;
+        [Tooltip("Server-side stun applied to attacker when their attack is parried. One-off pattern (not a general status duration system). Set to 0 to disable parry-stun (parry still blocks damage).")]
+        [SerializeField, Min(0f)] private float parryStunDuration = 1.0f;
 
         [Header("=== Owner Input Integration ===")]
         [SerializeField] private bool useBuiltInInputHandler = true;
@@ -153,6 +188,7 @@ namespace ArenaCombat.Core.Network
         public bool AutoSendMoveRequests => autoSendMoveRequests;
         public int LocalTick => localTick;
         public Camera OwnerCamera => ownerCamera;
+        public Collider PlayerCollider => playerCollider;
 
         #endregion
 
@@ -177,11 +213,31 @@ namespace ArenaCombat.Core.Network
         private bool isRopeMoving;
         private Vector3 ropeTargetPosition;
         private Vector3 lastValidatedServerPosition;
+        private float parryWindowTimer;
+        private float parryCooldownTimer;
+        private float parryStunTimer;
+
+        public bool IsParrying => parryWindowTimer > 0f;
+
+        /// <summary>
+        /// Server-only. Called by CombatManager3D when this player's attack is parried by a defender.
+        /// Applies StatusMask.Stunned for parryStunDuration seconds. Auto-cleared by UpdateServerTimers.
+        /// No-op when parryStunDuration is 0 (treated as feature disabled).
+        /// </summary>
+        public void ApplyParryStun()
+        {
+            if (!IsServer) return;
+            if (parryStunDuration <= 0f) return;
+            parryStunTimer = parryStunDuration;
+            AddStatus(StatusMask.Stunned);
+        }
 
         private enum QueuedActionType
         {
             Rope = 0,
-            PerkTrigger = 1
+            PerkTrigger = 1,
+            Attack = 2,
+            Parry = 3
         }
 
         private struct QueuedServerAction
@@ -190,9 +246,11 @@ namespace ArenaCombat.Core.Network
             public int ClientTick;
             public float ReceivedAt;
             public Vector3 AnchorHint;
+            public bool HasAnchorHint;
             public Vector3 Direction;
             public int TriggerId;
             public Vector3 TargetHint;
+            public AttackType AttackKind;
         }
 
         private readonly List<QueuedServerAction> queuedServerActions = new List<QueuedServerAction>();
@@ -210,6 +268,20 @@ namespace ArenaCombat.Core.Network
             playerCollider = GetComponent<Collider>();
             ResolvePlayerReferences();
 
+            // X3-2: bind per-entity managers as ICombatant owner. RequireComponent
+            // attributes guarantee these exist (Unity auto-adds on attach + prefab
+            // migration in X3-2 history). Initialize call (StatManager._runtimeStats
+            // clone from PlayerStatsSO) lands in X3-3 alongside damage routing.
+            if (TryGetComponent<StatManager>(out var statMgr))
+            {
+                _statMgr = statMgr;
+                statMgr.BindOwner(this);
+            }
+            if (TryGetComponent<StateManager>(out var stateMgr))
+                stateMgr.BindOwner(this);
+            // SkillExecutor: no binding API (cooldown dict self-contained).
+            // SkillManager: own Awake auto-detects ICombatant + StatManager + StateManager.
+
             // Top-down movement assumes no vertical physics-driven gameplay by default.
             rb.useGravity = false;
             rb.isKinematic = false;
@@ -223,6 +295,34 @@ namespace ArenaCombat.Core.Network
             {
                 inputHandler = GetComponent<PlayerInputHandler>();
             }
+        }
+
+        // X3-3: initialize / re-initialize StatManager authority. Called from
+        // OnNetworkSpawn (server-only) and Respawn (server-only).
+        private void InitializeStatManager()
+        {
+            if (_statMgr == null) return;
+            float shieldMax = _playerStatsSO != null ? _playerStatsSO.ShieldMax   : 0f;
+            float hpRegen   = _playerStatsSO != null ? _playerStatsSO.HPRegenRate : 0f;
+            _statMgr.Initialize(_playerStatsSO, maxHP, shieldMax, hpRegen, parryWindowDuration, CombatantKind.Player);
+        }
+
+        // BAL-1: 매치 시작 + RestartMatch에서 호출. slot 0에 starter 스킬 장착.
+        // Respawn은 슬롯을 건드리지 않으므로 별도 호출 불필요 (단일 사망 후 부활 시 슬롯 유지).
+        public void ApplyInitialLoadoutServer()
+        {
+            if (!IsServer) return;
+            if (_initialSkillSO == null)
+            {
+                if (!_warnedMissingInitialSkill)
+                {
+                    Debug.LogWarning("[PNC3D] _initialSkillSO 미할당 — slot 0 비어있음. Player prefab inspector에서 할당 필요.", this);
+                    _warnedMissingInitialSkill = true;
+                }
+                return;
+            }
+            var skillMgr = GetComponent<ArenaCombat.Core.Skill.SkillManager>();
+            if (skillMgr != null) skillMgr.SetSlot(0, _initialSkillSO);
         }
 
         public override void OnNetworkSpawn()
@@ -242,6 +342,10 @@ namespace ArenaCombat.Core.Network
 
             if (IsServer)
             {
+                // X3-3: initialize StatManager authority. Sync hook in FixedUpdate
+                // mirrors _statMgr.GetHP() / IsAlive into networkHP / networkIsAlive.
+                InitializeStatManager();
+
                 networkHP.Value = maxHP;
                 networkIsAlive.Value = true;
                 networkPosition.Value = transform.position;
@@ -253,13 +357,46 @@ namespace ArenaCombat.Core.Network
                     InputValidator.Instance.RegisterClient(OwnerClientId);
                 }
 
-                if (CombatManager.Instance != null)
+                if (CombatManager3D.Instance != null)
                 {
-                    CombatManager.Instance.RegisterPlayer3D(OwnerClientId, this);
+                    CombatManager3D.Instance.RegisterPlayer3D(OwnerClientId, this);
+                }
+
+                if (GameManager.Instance != null)
+                {
+                    GameManager.Instance.RegisterPlayer(gameObject);
+                }
+
+                PlayerBiasTracker.Instance?.RegisterPlayer(OwnerClientId);
+
+                // BAL-1: 매치 시작 시 slot 0에 starter 스킬 자동 장착.
+                ApplyInitialLoadoutServer();
+
+                var biasExec = GetComponent<SkillExecutor>();
+                if (biasExec != null)
+                {
+                    if (PlayerBiasTracker.Instance != null)
+                    {
+                        ulong clientId = OwnerClientId;
+                        _biasSkillHandler = (def, ctx) => PlayerBiasTracker.Instance?.RecordSkillCast(clientId, def, ctx);
+                        biasExec.OnExecuted += _biasSkillHandler;
+                    }
+
+                    _cooldownSyncHandler = (def, ctx) =>
+                    {
+                        if (def != null) SkillCooldownStartRpc(def.SkillId);
+                    };
+                    biasExec.OnExecuted += _cooldownSyncHandler;
                 }
             }
 
-            if (IsOwner)
+            if (!IsServer && _initialSkillSO != null)
+            {
+                var skillMgr = GetComponent<ArenaCombat.Core.Skill.SkillManager>();
+                if (skillMgr != null) skillMgr.SetSlot(0, _initialSkillSO);
+            }
+
+            if (IsOwner && !_isBTControlled)
             {
                 if (inputHandler != null)
                 {
@@ -277,6 +414,10 @@ namespace ArenaCombat.Core.Network
 
                 SetupTopDownCamera();
                 gameObject.name = $"Player3D_LOCAL_{OwnerClientId}";
+            }
+            else if (IsOwner && _isBTControlled)
+            {
+                gameObject.name = $"Player3D_BT_{OwnerClientId}";
             }
             else
             {
@@ -315,13 +456,28 @@ namespace ArenaCombat.Core.Network
                 InputValidator.Instance.UnregisterClient(OwnerClientId);
             }
 
-            if (IsServer && CombatManager.Instance != null)
+            if (IsServer && CombatManager3D.Instance != null)
             {
-                CombatManager.Instance.UnregisterPlayer3D(OwnerClientId);
+                CombatManager3D.Instance.UnregisterPlayer3D(OwnerClientId);
+            }
+
+            if (IsServer && GameManager.Instance != null)
+            {
+                GameManager.Instance.UnregisterPlayer(gameObject);
             }
 
             if (IsServer)
             {
+                var biasExec = GetComponent<SkillExecutor>();
+                if (biasExec != null)
+                {
+                    if (_biasSkillHandler != null) biasExec.OnExecuted -= _biasSkillHandler;
+                    if (_cooldownSyncHandler != null) biasExec.OnExecuted -= _cooldownSyncHandler;
+                }
+                _biasSkillHandler = null;
+                _cooldownSyncHandler = null;
+                PlayerBiasTracker.Instance?.UnregisterPlayer(OwnerClientId);
+
                 queuedServerActions.Clear();
             }
 
@@ -337,12 +493,12 @@ namespace ArenaCombat.Core.Network
                 return;
             }
 
-            if (IsOwner && autoSendMoveRequests)
+            if (IsOwner && !_isBTControlled && autoSendMoveRequests)
             {
                 SendCachedInputToServer();
             }
 
-            if (IsOwner && rebindOwnerCameraWhenMissing &&
+            if (IsOwner && !_isBTControlled && rebindOwnerCameraWhenMissing &&
                 (ownerCamera == null || !ownerCamera.isActiveAndEnabled))
             {
                 SetupTopDownCamera();
@@ -351,7 +507,22 @@ namespace ArenaCombat.Core.Network
             if (!IsServer)
             {
                 InterpolatePosition();
-                InterpolateRotation();
+                if (IsOwner && !_isBTControlled
+                    && networkIsAlive.Value
+                    && StatusHelper.CanMove(networkStatusMask.Value)
+                    && !networkIsRoping.Value
+                    && !IsLocalGameplayBlockedByCardDraft())
+                {
+                    Quaternion aimRot = Quaternion.Euler(0f, NormalizeYaw(cachedLookYaw), 0f);
+                    transform.rotation = Quaternion.Slerp(transform.rotation, aimRot, Time.deltaTime * rotationLerp);
+                }
+                else
+                {
+                    InterpolateRotation();
+                }
+                // B5-1 followup: non-server Rigidbody is non-kinematic too (line 281) so it can
+                // accumulate collision torque locally before interpolation corrects. Clear here.
+                ClearPhysicsAngularVelocity();
             }
 
             UpdateInspectorRuntimeDebug();
@@ -364,6 +535,8 @@ namespace ArenaCombat.Core.Network
                 return;
             }
 
+            Vector3 authoritativePos = transform.position;
+
             if (networkIsAlive.Value)
             {
                 ProcessQueuedServerActions();
@@ -371,31 +544,44 @@ namespace ArenaCombat.Core.Network
 
                 if (MapBounds3D.Instance != null)
                 {
-                    Vector3 resolvedPos = MapBounds3D.Instance.ResolveServerPosition(transform.position, lastValidatedServerPosition);
-                    if ((resolvedPos - transform.position).sqrMagnitude > 0.0001f)
+                    Vector3 resolvedPos = MapBounds3D.Instance.ResolveServerPosition(authoritativePos, lastValidatedServerPosition);
+                    if ((resolvedPos - authoritativePos).sqrMagnitude > 0.0001f)
                     {
-                        rb.position = resolvedPos;
-                        transform.position = resolvedPos;
+                        rb.MovePosition(resolvedPos);
+                        authoritativePos = resolvedPos;
                     }
 
-                    lastValidatedServerPosition = transform.position;
+                    lastValidatedServerPosition = authoritativePos;
 
-                    if (MapBounds3D.Instance.IsBelowKillZone(transform.position))
+                    if (MapBounds3D.Instance.IsBelowKillZone(authoritativePos))
                     {
-                        Respawn(MapBounds3D.Instance.GetRespawnPointNear(lastValidatedServerPosition));
+                        Die(OwnerClientId);
                         return;
                     }
                 }
                 else
                 {
-                    lastValidatedServerPosition = transform.position;
+                    lastValidatedServerPosition = authoritativePos;
                 }
             }
 
-            UpdateServerTimers();
+            authoritativePos = UpdateServerTimers(authoritativePos);
 
-            networkPosition.Value = transform.position;
+            networkPosition.Value = authoritativePos;
             networkYaw.Value = transform.eulerAngles.y;
+
+            // X3-3: StatManager → NV sync. Mirror HP every tick; trigger Die() on
+            // alive→dead transition (covers skill kills since SkillComponents path
+            // mutates _statMgr but not networkHP directly).
+            if (_statMgr != null)
+            {
+                float statHP = _statMgr.GetHP();
+                if (!Mathf.Approximately(networkHP.Value, statHP))
+                    networkHP.Value = statHP;
+                if (networkIsAlive.Value && !_statMgr.IsAlive)
+                    Die(_lastAttackerId);
+            }
+
             UpdateInspectorRuntimeDebug();
         }
 
@@ -411,6 +597,9 @@ namespace ArenaCombat.Core.Network
             inputHandler.OnMoveInput += HandleMoveInput;
             inputHandler.OnMoveInput2D += HandleMoveInput2D;
             inputHandler.OnAimPosition += HandleAimPosition;
+            inputHandler.OnLightAttack += HandleLightAttack;
+            inputHandler.OnHeavyAttack += HandleHeavyAttack;
+            inputHandler.OnParry += HandleParry;
         }
 
         private void UnsubscribeInputEvents()
@@ -423,7 +612,16 @@ namespace ArenaCombat.Core.Network
             inputHandler.OnMoveInput -= HandleMoveInput;
             inputHandler.OnMoveInput2D -= HandleMoveInput2D;
             inputHandler.OnAimPosition -= HandleAimPosition;
+            inputHandler.OnLightAttack -= HandleLightAttack;
+            inputHandler.OnHeavyAttack -= HandleHeavyAttack;
+            inputHandler.OnParry -= HandleParry;
         }
+
+        private void HandleLightAttack() => SubmitAttackIntent(AttackType.Light);
+
+        private void HandleHeavyAttack() => SubmitAttackIntent(AttackType.Heavy);
+
+        private void HandleParry() => SubmitParryIntent();
 
         private void HandleMoveInput(float horizontal)
         {
@@ -508,7 +706,7 @@ namespace ArenaCombat.Core.Network
         /// <summary>
         /// External-client entry point for rope action request.
         /// </summary>
-        public void SubmitRopeIntent(Vector3 anchorHint, Vector3 direction)
+        public void SubmitRopeIntent(Vector3 anchorHint, Vector3 direction, bool hasAnchorHint)
         {
             if (!IsOwner || !IsSpawned)
             {
@@ -521,7 +719,7 @@ namespace ArenaCombat.Core.Network
             }
 
             localTick++;
-            RequestRopeRpc(anchorHint, direction, localTick);
+            RequestRopeRpc(anchorHint, direction, hasAnchorHint, localTick);
         }
 
         /// <summary>
@@ -544,12 +742,100 @@ namespace ArenaCombat.Core.Network
         }
 
         /// <summary>
+        /// External-client entry point for 3D attack request (B1-3).
+        /// Server validates AttackType, rate-limits, enqueues; resolver is CombatManager3D stub in B1-3.
+        /// </summary>
+        public void SubmitAttackIntent(AttackType attackType)
+        {
+            if (!IsOwner || !IsSpawned)
+            {
+                return;
+            }
+
+            if (IsLocalGameplayBlockedByCardDraft())
+            {
+                return;
+            }
+
+            localTick++;
+            RequestAttackRpc(attackType, localTick);
+        }
+
+        /// <summary>
+        /// External-client entry point for 3D parry request (B1-3).
+        /// Opens server-side parry window on success.
+        /// </summary>
+        public void SubmitParryIntent()
+        {
+            if (!IsOwner || !IsSpawned)
+            {
+                return;
+            }
+
+            if (IsLocalGameplayBlockedByCardDraft())
+            {
+                return;
+            }
+
+            localTick++;
+            RequestParryRpc(localTick);
+        }
+
+        /// <summary>
         /// Allows external controller to reset or seed the local tick counter.
         /// </summary>
         public void ResetLocalTick(int newTick = 0)
         {
             localTick = Mathf.Max(0, newTick);
         }
+
+        #region Server-side BT Agent API (C2)
+
+        public void ServerSetMoveIntent(Vector2 move, float yaw)
+        {
+            if (!IsServer || !IsSpawned) return;
+            if (!networkIsAlive.Value || !StatusHelper.CanMove(networkStatusMask.Value) || networkIsRoping.Value)
+            {
+                serverMoveInput = Vector2.zero;
+                return;
+            }
+            if (float.IsNaN(move.x) || float.IsNaN(move.y) || float.IsInfinity(move.x) || float.IsInfinity(move.y))
+                move = Vector2.zero;
+            if (float.IsNaN(yaw) || float.IsInfinity(yaw))
+                yaw = 0f;
+            serverMoveInput = move.sqrMagnitude > 1f ? move.normalized : move;
+            serverLookYaw = yaw;
+        }
+
+        public void ServerSubmitAttack(AttackType type)
+        {
+            if (!IsServer || !IsSpawned || !networkIsAlive.Value) return;
+            if (!System.Enum.IsDefined(typeof(AttackType), type)) return;
+            localTick++;
+            var action = new QueuedServerAction
+            {
+                ActionType = QueuedActionType.Attack,
+                ClientTick = localTick,
+                ReceivedAt = Time.time,
+                AttackKind = type
+            };
+            TryEnqueueServerAction(action, out _);
+        }
+
+        public void ServerSubmitParry()
+        {
+            if (!IsServer || !IsSpawned || !networkIsAlive.Value) return;
+            localTick++;
+            var action = new QueuedServerAction
+            {
+                ActionType = QueuedActionType.Parry,
+                ClientTick = localTick,
+                ReceivedAt = Time.time
+            };
+            TryEnqueueServerAction(action, out _);
+        }
+
+        #endregion
 
         private void SendCachedInputToServer()
         {
@@ -574,8 +860,13 @@ namespace ArenaCombat.Core.Network
         #region Server Movement
 
         [Rpc(SendTo.Server)]
-        private void RequestMoveRpc(Vector2 moveInput, float lookYaw, int clientTick)
+        private void RequestMoveRpc(Vector2 moveInput, float lookYaw, int clientTick, RpcParams rpcParams = default)
         {
+            if (rpcParams.Receive.SenderClientId != OwnerClientId)
+            {
+                return;
+            }
+
             if (IsServerGameplayBlockedByCardDraft())
             {
                 serverMoveInput = Vector2.zero;
@@ -598,6 +889,8 @@ namespace ArenaCombat.Core.Network
                 lookYaw = InputValidator.Instance.SanitizeFloat(lookYaw);
             }
 
+            lookYaw = NormalizeYaw(lookYaw);
+
             if (!networkIsAlive.Value || !StatusHelper.CanMove(networkStatusMask.Value) || networkIsRoping.Value)
             {
                 serverMoveInput = Vector2.zero;
@@ -613,6 +906,7 @@ namespace ArenaCombat.Core.Network
             if (IsServerGameplayBlockedByCardDraft())
             {
                 rb.linearVelocity = Vector3.zero;
+                ClearPhysicsAngularVelocity();
                 SetStateId(CharacterStateId.Idle);
                 return;
             }
@@ -620,6 +914,7 @@ namespace ArenaCombat.Core.Network
             if (networkIsRoping.Value)
             {
                 rb.linearVelocity = Vector3.zero;
+                ClearPhysicsAngularVelocity();
                 return;
             }
 
@@ -632,24 +927,30 @@ namespace ArenaCombat.Core.Network
 
             rb.linearVelocity = new Vector3(desiredVelocity.x, 0f, desiredVelocity.z);
 
-            float targetYaw = transform.eulerAngles.y;
-
             if (serverMoveInput.sqrMagnitude > 0.001f)
             {
-                targetYaw = Mathf.Atan2(serverMoveInput.x, serverMoveInput.y) * Mathf.Rad2Deg;
                 SetStateId(CharacterStateId.Moving);
             }
             else
             {
-                targetYaw = serverLookYaw;
-                if (!networkIsRoping.Value)
-                {
-                    SetStateId(CharacterStateId.Idle);
-                }
+                SetStateId(CharacterStateId.Idle);
             }
 
+            float targetYaw = NormalizeYaw(serverLookYaw);
             Quaternion targetRotation = Quaternion.Euler(0f, targetYaw, 0f);
             transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.fixedDeltaTime * rotationLerp);
+
+            // B5-1 followup: kill accumulated collision torque so server Slerp is the only
+            // rotation driver (Rigidbody.constraints freeze X/Z only — Y must be damped manually).
+            ClearPhysicsAngularVelocity();
+        }
+
+        // B5-1 followup helper: zero angular velocity so Y-axis physics torque from collisions
+        // cannot accumulate against the script-driven rotation Slerp. Called in every server
+        // movement exit path and in non-server interpolation paths.
+        private void ClearPhysicsAngularVelocity()
+        {
+            if (rb != null) rb.angularVelocity = Vector3.zero;
         }
 
         #endregion
@@ -696,6 +997,14 @@ namespace ArenaCombat.Core.Network
                     case QueuedActionType.PerkTrigger:
                         ExecuteQueuedPerkTriggerAction(action);
                         break;
+
+                    case QueuedActionType.Attack:
+                        ExecuteQueuedAttackAction(action);
+                        break;
+
+                    case QueuedActionType.Parry:
+                        ExecuteQueuedParryAction(action);
+                        break;
                 }
             }
 
@@ -721,11 +1030,17 @@ namespace ArenaCombat.Core.Network
 
         private int GetQueuedActionPriority(QueuedActionType actionType)
         {
-            // Rope first to lock movement deterministically before other action checks in same tick.
+            // Per B1-1 Decision 7: Parry first (open defense window before attack resolves in same player's queue),
+            // then Rope (lock movement), then Attack, then PerkTrigger.
+            // NOTE: this ordering is WITHIN one PlayerNetworkController3D's queue only. Same-tick cross-player
+            // parry vs attack ordering depends on Unity object processing order — see B1-4 NOTE in
+            // ExecuteQueuedAttackAction.
             return actionType switch
             {
-                QueuedActionType.Rope => 0,
-                QueuedActionType.PerkTrigger => 1,
+                QueuedActionType.Parry => 0,
+                QueuedActionType.Rope => 1,
+                QueuedActionType.Attack => 2,
+                QueuedActionType.PerkTrigger => 3,
                 _ => 10
             };
         }
@@ -751,13 +1066,14 @@ namespace ArenaCombat.Core.Network
             }
 
             Vector3 origin = transform.position + Vector3.up * 0.5f;
-            if (!TryResolveRopeCandidateTarget(origin, action.AnchorHint, action.Direction, out Vector3 candidateTarget, out string detail))
+            if (!TryResolveRopeCandidateTarget(origin, action.AnchorHint, action.HasAnchorHint, action.Direction, out Vector3 candidateTarget, out string detail))
             {
                 RopeResultRpc(false, Vector3.zero, detail);
                 return;
             }
 
             networkIsRoping.Value = true;
+            PlayerBiasTracker.Instance?.RecordRope(OwnerClientId);
             networkRopeTarget.Value = candidateTarget;
             ropeTargetPosition = candidateTarget;
             isRopeMoving = true;
@@ -771,6 +1087,7 @@ namespace ArenaCombat.Core.Network
         private bool TryResolveRopeCandidateTarget(
             Vector3 origin,
             Vector3 anchorHint,
+            bool hasAnchorHint,
             Vector3 direction,
             out Vector3 candidateTarget,
             out string detail)
@@ -780,6 +1097,7 @@ namespace ArenaCombat.Core.Network
                 return MapBounds3D.Instance.TryResolveRopeTarget(
                     origin,
                     anchorHint,
+                    hasAnchorHint,
                     direction,
                     ropeMaxDistance,
                     ropeAnchorLayer,
@@ -803,9 +1121,16 @@ namespace ArenaCombat.Core.Network
                 return true;
             }
 
+            if (!hasAnchorHint)
+            {
+                candidateTarget = Vector3.zero;
+                detail = "InvalidAnchorHint";
+                return false;
+            }
+
             candidateTarget = anchorHint;
             detail = "Resolved";
-            return anchorHint != Vector3.zero;
+            return true;
         }
 
         private void ExecuteQueuedPerkTriggerAction(QueuedServerAction action)
@@ -828,13 +1153,13 @@ namespace ArenaCombat.Core.Network
                 return;
             }
 
-            if (CombatManager.Instance == null)
+            if (CombatManager3D.Instance == null)
             {
-                PerkTriggerResultRpc(action.TriggerId, false, "CombatManagerMissing");
+                PerkTriggerResultRpc(action.TriggerId, false, "CombatManager3DMissing");
                 return;
             }
 
-            bool accepted = CombatManager.Instance.TryProcessPerkTrigger3D(
+            bool accepted = CombatManager3D.Instance.TryProcessPerkTrigger3D(
                 OwnerClientId,
                 action.TriggerId,
                 transform.position,
@@ -850,12 +1175,104 @@ namespace ArenaCombat.Core.Network
             PerkTriggerResultRpc(action.TriggerId, accepted, detail);
         }
 
+        private void ExecuteQueuedAttackAction(QueuedServerAction action)
+        {
+            if (IsServerGameplayBlockedByCardDraft())
+            {
+                AttackRejectedFromOwnerRpc(action.AttackKind, "CardDraftActive");
+                return;
+            }
+
+            if (!networkIsAlive.Value || !StatusHelper.CanAct(networkStatusMask.Value))
+            {
+                AttackRejectedFromOwnerRpc(action.AttackKind, "CannotAct");
+                return;
+            }
+
+            if (networkIsRoping.Value)
+            {
+                AttackRejectedFromOwnerRpc(action.AttackKind, "Busy");
+                return;
+            }
+
+            if (CombatManager3D.Instance == null)
+            {
+                AttackRejectedFromOwnerRpc(action.AttackKind, "CombatManager3DMissing");
+                return;
+            }
+
+            // B1-4 NOTE: same-tick cross-player parry ordering is NOT guaranteed by within-player priority.
+            // Defender's parry queued in the same fixed tick may execute before or after this attack
+            // depending on Unity object processing order. Defender's parry must be opened in a PRIOR
+            // fixed-step to reliably defend against this attack.
+            bool accepted = CombatManager3D.Instance.TryProcessAttack3D(
+                OwnerClientId,
+                action.AttackKind,
+                transform.position,
+                transform.eulerAngles.y,
+                out string detail
+            );
+
+            if (!accepted)
+            {
+                AttackRejectedFromOwnerRpc(action.AttackKind, detail);
+                return;
+            }
+
+            PlayerBiasTracker.Instance?.RecordMelee(OwnerClientId);
+            SetStateId(CharacterStateId.Attacking);
+        }
+
+        private void ExecuteQueuedParryAction(QueuedServerAction action)
+        {
+            if (IsServerGameplayBlockedByCardDraft())
+            {
+                ParryRejectedFromOwnerRpc("CardDraftActive");
+                return;
+            }
+
+            if (!networkIsAlive.Value || !StatusHelper.CanAct(networkStatusMask.Value))
+            {
+                ParryRejectedFromOwnerRpc("CannotAct");
+                return;
+            }
+
+            if (networkIsRoping.Value)
+            {
+                ParryRejectedFromOwnerRpc("Busy");
+                return;
+            }
+
+            if (parryCooldownTimer > 0f)
+            {
+                ParryRejectedFromOwnerRpc("Cooldown");
+                return;
+            }
+
+            if (CombatManager3D.Instance == null)
+            {
+                ParryRejectedFromOwnerRpc("CombatManager3DMissing");
+                return;
+            }
+
+            bool accepted = CombatManager3D.Instance.TryProcessParry3D(OwnerClientId, out string detail);
+            if (!accepted)
+            {
+                ParryRejectedFromOwnerRpc(detail);
+                return;
+            }
+
+            PlayerBiasTracker.Instance?.RecordParry(OwnerClientId);
+            parryWindowTimer = parryWindowDuration;
+            parryCooldownTimer = parryCooldown;
+        }
+
         #endregion
 
         #region Rope Prework (No Final Anchor Judgment)
 
         [Rpc(SendTo.Server)]
-        private void RequestRopeRpc(Vector3 anchorHint, Vector3 direction, int clientTick)
+        private void RequestRopeRpc(Vector3 anchorHint, Vector3 direction, bool hasAnchorHint, int clientTick)
         {
             if (IsServerGameplayBlockedByCardDraft())
             {
@@ -887,6 +1304,7 @@ namespace ArenaCombat.Core.Network
                 ClientTick = clientTick,
                 ReceivedAt = Time.time,
                 AnchorHint = anchorHint,
+                HasAnchorHint = hasAnchorHint,
                 Direction = direction
             };
 
@@ -963,37 +1381,151 @@ namespace ArenaCombat.Core.Network
 
         #endregion
 
+        #region Attack/Parry Prework (B1-3 — resolver stubs in CombatManager3D, hit logic in B1-4)
+
+        [Rpc(SendTo.Server)]
+        private void RequestAttackRpc(AttackType attackType, int clientTick)
+        {
+            if (IsServerGameplayBlockedByCardDraft())
+            {
+                AttackRejectedFromOwnerRpc(attackType, "CardDraftActive");
+                return;
+            }
+
+            if (!System.Enum.IsDefined(typeof(AttackType), attackType))
+            {
+                AttackRejectedFromOwnerRpc(attackType, "InvalidAttackType");
+                return;
+            }
+
+            if (InputValidator.Instance != null)
+            {
+                if (!InputValidator.Instance.CheckRateLimit(OwnerClientId, "attack3d"))
+                {
+                    AttackRejectedFromOwnerRpc(attackType, "RateLimited");
+                    return;
+                }
+
+                if (!InputValidator.Instance.ValidateTickOrder(OwnerClientId, clientTick, "attack3d"))
+                {
+                    AttackRejectedFromOwnerRpc(attackType, "TickRejected");
+                    return;
+                }
+            }
+
+            QueuedServerAction queuedAction = new QueuedServerAction
+            {
+                ActionType = QueuedActionType.Attack,
+                ClientTick = clientTick,
+                ReceivedAt = Time.time,
+                AttackKind = attackType
+            };
+
+            if (!TryEnqueueServerAction(queuedAction, out string rejectReason))
+            {
+                AttackRejectedFromOwnerRpc(attackType, rejectReason);
+            }
+        }
+
+        [Rpc(SendTo.Server)]
+        private void RequestParryRpc(int clientTick)
+        {
+            if (IsServerGameplayBlockedByCardDraft())
+            {
+                ParryRejectedFromOwnerRpc("CardDraftActive");
+                return;
+            }
+
+            if (InputValidator.Instance != null)
+            {
+                if (!InputValidator.Instance.CheckRateLimit(OwnerClientId, "parry3d"))
+                {
+                    ParryRejectedFromOwnerRpc("RateLimited");
+                    return;
+                }
+
+                if (!InputValidator.Instance.ValidateTickOrder(OwnerClientId, clientTick, "parry3d"))
+                {
+                    ParryRejectedFromOwnerRpc("TickRejected");
+                    return;
+                }
+            }
+
+            QueuedServerAction queuedAction = new QueuedServerAction
+            {
+                ActionType = QueuedActionType.Parry,
+                ClientTick = clientTick,
+                ReceivedAt = Time.time
+            };
+
+            if (!TryEnqueueServerAction(queuedAction, out string rejectReason))
+            {
+                ParryRejectedFromOwnerRpc(rejectReason);
+            }
+        }
+
+        [Rpc(SendTo.Owner)]
+        private void AttackRejectedFromOwnerRpc(AttackType attackType, string reason)
+        {
+            Debug.Log($"[PlayerNetworkController3D] Attack rejected (owner-only): type={attackType} reason={reason}");
+        }
+
+        [Rpc(SendTo.Owner)]
+        private void ParryRejectedFromOwnerRpc(string reason)
+        {
+            Debug.Log($"[PlayerNetworkController3D] Parry rejected (owner-only): reason={reason}");
+        }
+
+        #endregion
+
         #region Survival and Status
 
-        public void TakeDamage(float damage, ulong attackerId, DamageType damageType = DamageType.Physical)
+        /// <summary>
+        /// Server-only damage application. Returns true if damage was applied (passed alive +
+        /// invulnerability + status filters), false if upstream-rejected before HP modification.
+        /// Caller (CombatManager3D resolver) uses the return for "actually damaged" hitTargets +
+        /// assist attribution accuracy. damage=0 still returns true (HP unchanged but not rejected).
+        /// </summary>
+        public bool TakeDamage(float damage, ulong attackerId, DamageType damageType = DamageType.Physical)
         {
             if (!IsServer)
             {
-                return;
+                return false;
             }
 
             if (!networkIsAlive.Value)
             {
-                return;
+                return false;
             }
 
             if (invulnerabilityTimer > 0f || !StatusHelper.CanTakeDamage(networkStatusMask.Value))
             {
-                return;
+                return false;
             }
 
-            float oldHP = networkHP.Value;
-            networkHP.Value = Mathf.Max(0f, networkHP.Value - damage);
+            // X3-3: route damage through StatManager (single authority).
+            // FixedUpdate sync hook mirrors _statMgr.GetHP() → networkHP and detects
+            // alive→dead transition → Die(_lastAttackerId).
+            _lastAttackerId = attackerId;
+            if (_statMgr != null)
+            {
+                _statMgr.ReceiveDamage(damage, null /* TODO X3-N: attacker ICombatant lookup */);
+            }
+            else
+            {
+                Debug.LogWarning("[PNC3D X3-3] StatManager null fallback — direct networkHP mutation");
+                networkHP.Value = Mathf.Max(0f, networkHP.Value - damage);
+            }
             DamageEventRpc(damage, attackerId, (byte)damageType);
 
-            if (networkHP.Value <= 0f)
-            {
-                Die(attackerId);
-            }
-            else if (StatusHelper.CanBeInterrupted(networkStatusMask.Value))
+            // Hit interrupt: only if still alive post-damage (StatManager IsAlive authoritative).
+            bool stillAlive = _statMgr != null ? _statMgr.IsAlive : networkHP.Value > 0f;
+            if (stillAlive && StatusHelper.CanBeInterrupted(networkStatusMask.Value))
             {
                 SetStateId(CharacterStateId.Hit);
             }
+
+            return true;
         }
 
         public void Heal(float amount)
@@ -1003,7 +1535,15 @@ namespace ArenaCombat.Core.Network
                 return;
             }
 
-            networkHP.Value = Mathf.Min(maxHP, networkHP.Value + amount);
+            // X3-3 (Codex S-3): route heal through StatManager. Sync hook mirrors to networkHP.
+            if (_statMgr != null)
+            {
+                _statMgr.RecoverHP(amount);
+            }
+            else
+            {
+                networkHP.Value = Mathf.Min(maxHP, networkHP.Value + amount);
+            }
             HealEventRpc(amount);
         }
 
@@ -1011,12 +1551,17 @@ namespace ArenaCombat.Core.Network
         {
             networkHP.Value = 0f;
             networkIsAlive.Value = false;
+            if (_statMgr != null) _statMgr.SetHP(0f);
             networkStatusMask.Value = StatusMask.None;
             SetStateId(CharacterStateId.Dead);
             queuedServerActions.Clear();
             serverMoveInput = Vector2.zero;
             networkIsRoping.Value = false;
             isRopeMoving = false;
+            parryWindowTimer = 0f;
+            parryCooldownTimer = 0f;
+            parryStunTimer = 0f;
+            RemoveStatus(StatusMask.Stunned);
 
             if (playerCollider != null)
             {
@@ -1027,9 +1572,9 @@ namespace ArenaCombat.Core.Network
             respawnTimer = respawnTime;
             DeathEventRpc(killerId);
 
-            if (CombatManager.Instance != null)
+            if (CombatManager3D.Instance != null)
             {
-                CombatManager.Instance.OnPlayerDeath(OwnerClientId, killerId);
+                CombatManager3D.Instance.OnPlayerDeath3D(OwnerClientId, killerId);
             }
         }
 
@@ -1045,6 +1590,11 @@ namespace ArenaCombat.Core.Network
                 position = MapBounds3D.Instance.GetSafeSpawnPoint(position);
             }
 
+            // X3-3 (Codex C-1): reset StatManager authority on respawn. Without this,
+            // _statMgr._currentHP stays 0 and _isAlive stays false from death; next
+            // FixedUpdate sync would re-flip networkIsAlive to dead.
+            InitializeStatManager();
+
             networkHP.Value = maxHP;
             networkIsAlive.Value = true;
             networkStatusMask.Value = StatusMask.None;
@@ -1054,6 +1604,10 @@ namespace ArenaCombat.Core.Network
             transform.rotation = Quaternion.Euler(0f, serverLookYaw, 0f);
             rb.linearVelocity = Vector3.zero;
             lastValidatedServerPosition = position;
+            parryWindowTimer = 0f;
+            parryCooldownTimer = 0f;
+            parryStunTimer = 0f;
+            RemoveStatus(StatusMask.Stunned);
 
             if (playerCollider != null)
             {
@@ -1108,19 +1662,25 @@ namespace ArenaCombat.Core.Network
             networkTeamId.Value = team;
         }
 
-        private void UpdateServerTimers()
+        private Vector3 UpdateServerTimers(Vector3 authoritativePos)
         {
             float dt = Time.fixedDeltaTime;
 
             if (!networkIsAlive.Value && respawnTimer > 0f)
             {
-                respawnTimer -= dt;
-                if (respawnTimer <= 0f)
+                GameStateManager gsm = GameStateManager.Instance;
+                bool matchEnded = gsm != null && gsm.CurrentMatchState == MatchState.MatchEnd;
+                if (!matchEnded)
                 {
-                    Vector3 spawnPos = MapBounds3D.Instance != null
-                        ? MapBounds3D.Instance.GetRespawnPointNear(lastValidatedServerPosition)
-                        : transform.position;
-                    Respawn(spawnPos);
+                    respawnTimer -= dt;
+                    if (respawnTimer <= 0f)
+                    {
+                        Vector3 spawnPos = MapBounds3D.Instance != null
+                            ? MapBounds3D.Instance.GetRespawnPointNear(lastValidatedServerPosition)
+                            : transform.position;
+                        Respawn(spawnPos);
+                        authoritativePos = transform.position;
+                    }
                 }
             }
 
@@ -1138,16 +1698,42 @@ namespace ArenaCombat.Core.Network
                 ropeCooldownTimer -= dt;
             }
 
+            if (parryWindowTimer > 0f)
+            {
+                parryWindowTimer -= dt;
+            }
+
+            if (parryCooldownTimer > 0f)
+            {
+                parryCooldownTimer -= dt;
+            }
+
+            if (parryStunTimer > 0f)
+            {
+                parryStunTimer -= dt;
+                if (parryStunTimer <= 0f)
+                {
+                    RemoveStatus(StatusMask.Stunned);
+                }
+            }
+
             if (isRopeMoving && networkIsRoping.Value)
             {
-                Vector3 current = transform.position;
+                Vector3 current = authoritativePos;
                 Vector3 toTarget = ropeTargetPosition - current;
                 float distance = toTarget.magnitude;
                 float step = ropeSpeed * dt;
 
                 if (distance <= 0.25f || step >= distance)
                 {
-                    transform.position = ropeTargetPosition;
+                    Vector3 arrivalPos = ropeTargetPosition;
+                    if (MapBounds3D.Instance != null)
+                    {
+                        arrivalPos = MapBounds3D.Instance.ResolveServerPosition(arrivalPos, current);
+                    }
+
+                    rb.MovePosition(arrivalPos);
+                    authoritativePos = arrivalPos;
                     rb.linearVelocity = Vector3.zero;
                     EndRopeAction();
                 }
@@ -1161,10 +1747,12 @@ namespace ArenaCombat.Core.Network
                     }
 
                     rb.linearVelocity = Vector3.zero;
-                    rb.position = next;
-                    transform.position = next;
+                    rb.MovePosition(next);
+                    authoritativePos = next;
                 }
             }
+
+            return authoritativePos;
         }
 
         #endregion
@@ -1323,6 +1911,34 @@ namespace ArenaCombat.Core.Network
 
         #region Client RPCs
 
+        [Rpc(SendTo.Owner)]
+        private void SkillCooldownStartRpc(string skillId)
+        {
+            if (IsServer) return;
+            var exec = GetComponent<SkillExecutor>();
+            if (exec != null) exec.MarkUsedNow(skillId);
+        }
+
+        public void NotifySkillResetToOwner()
+        {
+            if (!IsServer) return;
+            SkillResetRpc();
+        }
+
+        [Rpc(SendTo.Owner)]
+        private void SkillResetRpc()
+        {
+            if (IsServer) return;
+            var exec = GetComponent<SkillExecutor>();
+            if (exec != null) exec.ResetAll();
+            var skillMgr = GetComponent<SkillManager>();
+            if (skillMgr != null)
+            {
+                skillMgr.ClearAll();
+                if (_initialSkillSO != null) skillMgr.SetSlot(0, _initialSkillSO);
+            }
+        }
+
         [Rpc(SendTo.ClientsAndHost)]
         private void DamageEventRpc(float damage, ulong attackerId, byte damageType)
         {
@@ -1425,7 +2041,12 @@ namespace ArenaCombat.Core.Network
                 return false;
             }
 
-            return IsGlobalCardDraftActive();
+            if (IsGlobalCardDraftActive()) return true;
+
+            GameStateManager gsm = GameStateManager.Instance;
+            if (gsm != null && gsm.CurrentMatchState == MatchState.MatchEnd) return true;
+
+            return false;
         }
 
         private bool IsServerGameplayBlockedByCardDraft()
@@ -1435,7 +2056,12 @@ namespace ArenaCombat.Core.Network
                 return false;
             }
 
-            return IsGlobalCardDraftActive();
+            if (IsGlobalCardDraftActive()) return true;
+
+            GameStateManager gsm = GameStateManager.Instance;
+            if (gsm != null && gsm.CurrentMatchState == MatchState.MatchEnd) return true;
+
+            return false;
         }
 
         private bool IsGlobalCardDraftActive()
@@ -1446,6 +2072,137 @@ namespace ArenaCombat.Core.Network
                    gameStateManager.IsGlobalCardDraftActive;
         }
 
+        private static float NormalizeYaw(float yaw)
+        {
+            yaw %= 360f;
+            if (yaw > 180f) yaw -= 360f;
+            else if (yaw < -180f) yaw += 360f;
+            return yaw;
+        }
+
         #endregion
+
+        // ══════════════════════════════════════════════════════════════════
+        // ICombatant implementation (X3-1, compile bridge — NO behavior change)
+        //
+        // Phase plan:
+        //   X3-1 (this round): interface declaration + read-only properties forward
+        //                      to existing PNC3D state. ALL mutating methods are
+        //                      warn-once + no-op. SkillManager.Awake's
+        //                      GetComponent<ICombatant>() now resolves to PNC3D,
+        //                      but no skill execution path mutates PNC3D state
+        //                      until X3-2/3.
+        //   X3-2: Attach StatManager / StateManager / SkillExecutor / SkillManager
+        //         components in PNC3D Awake. Stat tracking begins (parallel to
+        //         networkHP, no replace yet).
+        //   X3-3: Replace mutation no-ops with StatManager routing
+        //         (TakeDamage -> StatManager.ReceiveDamage, RecoverHP -> Heal
+        //         wrapper, Shield methods -> StatManager.AddShield etc.).
+        //         networkHP becomes server-side mirror of StatManager._currentHP.
+        //   X3-4: Position control wiring (Knockback / Pull / MoveBy ->
+        //         PNC3D.MovePosition pipeline).
+        //   X3-5: SkillProjectile / SkillArea NetworkBehaviour conversion +
+        //         IsServer gates.
+        //   X3-6: CardManager LEGACY patterns -> GSM RPC/NV routing.
+        //   X3-7: SkillManager auto-cast end-to-end smoke test.
+        //
+        // Per Codex X3-1 critical: this round MUST NOT route TakeDamage /
+        // TakeShieldBreakDamage / RecoverHP to existing TakeDamage / Heal
+        // implementations. Doing so would let any X2 SkillStep accidentally
+        // mutate HP via the new ICombatant path with killerId=0 attribution
+        // before X3-3 lands the proper StatManager-routed flow.
+        // ══════════════════════════════════════════════════════════════════
+
+        // ── Identity (explicit interface impl — Pascal-case clash with MonoBehaviour) ──
+        Transform ICombatant.Transform => transform;
+        GameObject ICombatant.GameObject => gameObject;
+
+        // ── State (read-only forwards) ──
+        float ICombatant.MaxHP => MaxHP;
+        float ICombatant.CurrentHPPercent => _statMgr != null ? _statMgr.GetHPPercent() : (MaxHP > 0f ? CurrentHP / MaxHP : 0f);
+        float ICombatant.Shield => _statMgr != null ? _statMgr.GetShield() : 0f;
+        bool  ICombatant.IsAlive => IsAlive;
+        bool  ICombatant.IsCasting => _statMgr != null && _statMgr.IsCasting;
+        bool  ICombatant.IsParrying => IsParrying;
+        float ICombatant.ParryWindow => parryWindowDuration;
+
+        // ── Mutation / query — X3-3 routes through StatManager (single authority).
+        // FixedUpdate sync hook mirrors HP/IsAlive changes back to networkHP/networkIsAlive.
+        // Skill kill attribution: _lastAttackerId carry-through via attacker ICombatant
+        // → PNC3D.OwnerClientId mapping (Codex C-2).
+
+        void ICombatant.TakeDamage(float amount, ICombatant attacker)
+        {
+            _lastAttackerId = attacker is PlayerNetworkController3D pnc ? pnc.OwnerClientId : 0UL;
+            _statMgr?.ReceiveDamage(amount, attacker);
+        }
+
+        void ICombatant.TakeShieldBreakDamage(float amount, float multiplier, ICombatant attacker)
+        {
+            _lastAttackerId = attacker is PlayerNetworkController3D pnc ? pnc.OwnerClientId : 0UL;
+            _statMgr?.ReceiveShieldBreakDamage(amount, multiplier, attacker);
+        }
+
+        void ICombatant.RecoverHP(float amount) => _statMgr?.RecoverHP(amount);
+        void ICombatant.AddShield(float amount) => _statMgr?.AddShield(amount);
+
+        void ICombatant.ApplyStatus(StatusType type, float duration, float value) =>
+            _statMgr?.ApplyStatus(type, duration, value);
+
+        bool ICombatant.HasStatus(StatusType type) =>
+            _statMgr != null && _statMgr.HasStatus(type);
+
+        void ICombatant.ApplyBuff(BuffType type, float duration, float value) =>
+            _statMgr?.ApplyBuff(type, duration, value);
+
+        void ICombatant.ApplyDebuff(DebuffType type, float duration, float value) =>
+            _statMgr?.ApplyDebuff(type, duration, value);
+
+        void ICombatant.RemoveStatuses(CleanseType type, int count) =>
+            _statMgr?.RemoveStatuses(type, count);
+
+        void ICombatant.RemoveBuffs(DispelType type, int count) =>
+            _statMgr?.RemoveBuffs(type, count);
+
+        // X3-4: instant displacement with MapBounds3D clamp + immediate NV mirror.
+        // Codex C-1: networkPosition.Value sync inside helper (not deferred to FixedUpdate)
+        // to keep position-control contract tick-aligned with movement sync.
+        // Duration parameter ignored — coroutine-based smooth motion deferred to X3-N.
+
+        void ICombatant.Knockback(Vector3 direction, float distance)
+        {
+            if (!IsServer || rb == null) return;
+            ApplyPositionOffset(direction, distance);
+        }
+
+        void ICombatant.Pull(Vector3 towardPosition, float distance, float duration)
+        {
+            if (!IsServer || rb == null) return;
+            Vector3 dir = (towardPosition - transform.position).normalized;
+            ApplyPositionOffset(dir, distance);
+            // TODO X3-N: duration-based interpolated pull (coroutine).
+        }
+
+        void ICombatant.MoveBy(Vector3 direction, float distance, float duration, MoveType moveType)
+        {
+            if (!IsServer || rb == null) return;
+            ApplyPositionOffset(direction, distance);
+            // TODO X3-N: MoveType branching (Dash/Charge/Jump/Rope) + duration motion.
+            // MoveType.Rope: route through existing rope queue infrastructure (deferred).
+        }
+
+        private void ApplyPositionOffset(Vector3 direction, float distance)
+        {
+            if (direction.sqrMagnitude < 0.0001f) return;
+            Vector3 target = transform.position + direction.normalized * distance;
+            if (MapBounds3D.Instance != null)
+                target = MapBounds3D.Instance.ResolveServerPosition(target, lastValidatedServerPosition);
+            rb.MovePosition(target);
+            lastValidatedServerPosition = target;
+            networkPosition.Value = target;   // Codex C-1: immediate NV mirror.
+        }
+
+        void ICombatant.NotifyParryReward(ParryRewardType rewardType, float value, float duration, ICombatant attacker) =>
+            _statMgr?.NotifyParryReward(rewardType, value, duration, attacker);
     }
 }

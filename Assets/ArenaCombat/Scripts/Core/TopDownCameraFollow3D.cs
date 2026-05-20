@@ -13,7 +13,7 @@ namespace ArenaCombat.Core
     public class TopDownCameraFollow3D : MonoBehaviour
     {
         [Header("=== Follow Settings ===")]
-        [SerializeField] private Vector3 offset = new Vector3(0f, 16f, -8f);
+        [SerializeField] private Vector3 offset = new Vector3(0f, 24f, -12f);
         [SerializeField] private Vector3 rotationEuler = new Vector3(60f, 0f, 0f);
         [SerializeField] private float smoothSpeed = 8f;
 

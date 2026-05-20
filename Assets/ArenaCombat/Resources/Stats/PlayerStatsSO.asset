@@ -1,0 +1,54 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fad02e4706c91fd40bc23c78d0904ad4, type: 3}
+  m_Name: PlayerStatsSO
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerStatsSO
+  DamageTakenMultiplier: 1
+  HealingReceivedMultiplier: 1
+  MoveControlMultiplier: 1
+  RopeCancelResistance: 0
+  SkillCooldownMultiplier: 1
+  ChannelDurationMultiplier: 1
+  SpawnInvulnerableDuration: 0
+  StunDurationMultiplier: 1
+  CrowdControlPower: 1
+  CrowdControlResistance: 0
+  HitStunResistance: 0
+  DebuffDurationResistance: 0
+  DamageUpMultiplier: 1
+  DefenseUpMultiplier: 1
+  VulnerabilityBonus: 0
+  ReflectRatio: 0
+  MaxHP: 200
+  CurrentHP: 100
+  BaseDamage: 10
+  BaseDefense: 5
+  MoveSpeed: 100
+  TurnSpeed: 180
+  ActionSpeed: 1
+  MoveAcceleration: 10
+  MoveDeceleration: 10
+  RopeRange: 10
+  RopeSpeed: 15
+  RopeCooldown: 5
+  RopeAttachTime: 0.2
+  RopeReleaseRecovery: 0.5
+  AttackAreaScale: 1
+  SkillPower: 1
+  ParryWindow: 0.3
+  ParryCooldown: 2
+  CounterWindow: 0.5
+  ShieldMax: 50
+  CurrentShield: 0
+  HPRegenRate: 1
+  ReviveTime: 5
+  AggroWeight: 1

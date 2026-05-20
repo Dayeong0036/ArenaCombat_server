@@ -4,6 +4,7 @@
 
 using System;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 /// <summary>
 /// Captures local player input and emits events.
@@ -63,13 +64,13 @@ public class PlayerInputHandler : MonoBehaviour
 
     private void HandleMovementInput()
     {
-        float horizontal = Input.GetAxisRaw("Horizontal");
-        float vertical = Input.GetAxisRaw("Vertical");
+        Vector2 move = ReadMoveAxis();
 
-        OnMoveInput?.Invoke(horizontal);
-        OnMoveInput2D?.Invoke(new Vector2(horizontal, vertical));
+        OnMoveInput?.Invoke(move.x);
+        OnMoveInput2D?.Invoke(move);
 
-        if (Input.GetKeyDown(KeyCode.Space))
+        Keyboard kb = Keyboard.current;
+        if (kb != null && kb.spaceKey.wasPressedThisFrame)
         {
             OnJumpInput?.Invoke();
         }
@@ -77,15 +78,17 @@ public class PlayerInputHandler : MonoBehaviour
 
     private void HandleAimInput()
     {
+        Vector3 mouseScreenPos = ReadMouseScreenPosition();
+
         if (!use3DGroundAimProjection)
         {
-            Vector2 mouseWorldPos = mainCamera.ScreenToWorldPoint(Input.mousePosition);
+            Vector2 mouseWorldPos = mainCamera.ScreenToWorldPoint(mouseScreenPos);
             OnAimPosition?.Invoke(mouseWorldPos);
             return;
         }
 
         // Project cursor ray onto a configurable horizontal plane and pass X/Z as Vector2.
-        Ray ray = mainCamera.ScreenPointToRay(Input.mousePosition);
+        Ray ray = mainCamera.ScreenPointToRay(mouseScreenPos);
         Plane plane = new Plane(Vector3.up, new Vector3(0f, aimGroundY, 0f));
         if (plane.Raycast(ray, out float enter))
         {
@@ -96,12 +99,15 @@ public class PlayerInputHandler : MonoBehaviour
 
     private void HandleGrappleInput()
     {
-        if (Input.GetMouseButtonDown(0))
+        Mouse mouse = Mouse.current;
+        if (mouse == null) return;
+
+        if (mouse.leftButton.wasPressedThisFrame)
         {
             OnGrappleStart?.Invoke();
         }
 
-        if (Input.GetMouseButtonUp(0))
+        if (mouse.leftButton.wasReleasedThisFrame)
         {
             OnGrappleEnd?.Invoke();
         }
@@ -109,17 +115,20 @@ public class PlayerInputHandler : MonoBehaviour
 
     private void HandleCombatInput()
     {
-        if (Input.GetKeyDown(KeyCode.J))
+        Keyboard kb = Keyboard.current;
+        if (kb == null) return;
+
+        if (kb.jKey.wasPressedThisFrame)
         {
             OnLightAttack?.Invoke();
         }
 
-        if (Input.GetKeyDown(KeyCode.K))
+        if (kb.kKey.wasPressedThisFrame)
         {
             OnHeavyAttack?.Invoke();
         }
 
-        if (Input.GetKeyDown(KeyCode.L))
+        if (kb.lKey.wasPressedThisFrame)
         {
             OnParry?.Invoke();
         }
@@ -127,20 +136,52 @@ public class PlayerInputHandler : MonoBehaviour
 
     private void HandleRopeInput()
     {
-        if (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift))
+        Keyboard kb = Keyboard.current;
+        if (kb == null) return;
+
+        if (!(kb.leftShiftKey.isPressed || kb.rightShiftKey.isPressed))
         {
-            Vector2 ropeDir = Vector2.zero;
-
-            if (Input.GetKeyDown(KeyCode.W)) ropeDir = Vector2.up;
-            else if (Input.GetKeyDown(KeyCode.A)) ropeDir = new Vector2(-1f, 1f).normalized;
-            else if (Input.GetKeyDown(KeyCode.D)) ropeDir = new Vector2(1f, 1f).normalized;
-            else if (Input.GetKeyDown(KeyCode.S)) ropeDir = Vector2.down;
-
-            if (ropeDir != Vector2.zero)
-            {
-                OnRopeAction?.Invoke(ropeDir);
-            }
+            return;
         }
+
+        Vector2 ropeDir = Vector2.zero;
+
+        if (kb.wKey.wasPressedThisFrame) ropeDir = Vector2.up;
+        else if (kb.aKey.wasPressedThisFrame) ropeDir = new Vector2(-1f, 1f).normalized;
+        else if (kb.dKey.wasPressedThisFrame) ropeDir = new Vector2(1f, 1f).normalized;
+        else if (kb.sKey.wasPressedThisFrame) ropeDir = Vector2.down;
+
+        if (ropeDir != Vector2.zero)
+        {
+            OnRopeAction?.Invoke(ropeDir);
+        }
+    }
+
+    /// <summary>
+    /// Reads WASD + arrow keys as a -1..1 axis pair, matching the legacy "Horizontal"/"Vertical" axes.
+    /// </summary>
+    private static Vector2 ReadMoveAxis()
+    {
+        Keyboard kb = Keyboard.current;
+        if (kb == null) return Vector2.zero;
+
+        float x = 0f;
+        if (kb.dKey.isPressed || kb.rightArrowKey.isPressed) x += 1f;
+        if (kb.aKey.isPressed || kb.leftArrowKey.isPressed) x -= 1f;
+
+        float y = 0f;
+        if (kb.wKey.isPressed || kb.upArrowKey.isPressed) y += 1f;
+        if (kb.sKey.isPressed || kb.downArrowKey.isPressed) y -= 1f;
+
+        return new Vector2(x, y);
+    }
+
+    private static Vector3 ReadMouseScreenPosition()
+    {
+        Mouse mouse = Mouse.current;
+        if (mouse == null) return Vector3.zero;
+        Vector2 p = mouse.position.ReadValue();
+        return new Vector3(p.x, p.y, 0f);
     }
 
     /// <summary>

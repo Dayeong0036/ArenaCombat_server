@@ -1,0 +1,32 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a193f29c932883b4ba06b526288ee2f4, type: 3}
+  m_Name: ExecutionSpike_Boss
+  m_EditorClassIdentifier: Assembly-CSharp::SkillDefinition
+  SkillId: ExecutionSpike_Boss
+  DisplayName: "Boss Execution Spike"
+  Description: "Narrow directional strike. On hit, applies vulnerability + execute damage below 30% HP. On miss, retries with wider cone."
+  Icon: {fileID: 0}
+  Cooldown: 10
+  TelegraphDuration: 1.35
+  Range: 26
+  TargetType: 3
+  RoleTags:
+  - 29
+  - 0
+  - 26
+  - 12
+  CounterTags:
+  - 2
+  - 6
+  AIHint_ConeOrAoE: 38
+  AIHint_Category: 1

@@ -1,0 +1,28 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a193f29c932883b4ba06b526288ee2f4, type: 3}
+  m_Name: SurvivalPulse
+  m_EditorClassIdentifier: Assembly-CSharp::SkillDefinition
+  SkillId: SurvivalPulse
+  DisplayName: "생존 맥동"
+  Description: "저체력 시 즉시 회복 + 체력 재생 + 정화 1회."
+  Icon: {fileID: 0}
+  Cooldown: 14
+  Range: 0
+  TargetType: 2
+  RoleTags:
+  - 6
+  - 20
+  - 28
+  CounterTags: []
+  AIHint_ConeOrAoE: 0
+  AIHint_Category: 4

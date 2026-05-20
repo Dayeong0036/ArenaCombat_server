@@ -30,16 +30,19 @@ ARCH MAP (Code Scope)
 - 차별 포인트: 플레이어 행동 편향에 따라 보스 대응 패턴이 달라지는 적응형 전투 구조
 
 ### 2.2 기술 스택
-- Unity `2022.3 LTS`
-- NGO (`Netcode for GameObjects`)
-- Unity Relay + Unity Lobby
+- Unity `6.3 LTS` (`6000.3.11f1`, 2022.3 LTS에서 마이그레이션)
+- NGO `2.11.0` (`Netcode for GameObjects` 2.x — `[Rpc(SendTo.X)]` syntax)
+- Unity Transport `2.7.2`
+- URP `17.3.0`
+- Input System `1.19.0` (Active Input Handling = New only — `Mouse.current` / `Keyboard.current` 직접 접근)
+- Unity Relay `1.0.5` + Unity Lobby `1.3.0` + Authentication `3.6.1`
 - 호스트 권위 서버 구조 (`Host-authoritative`, dedicated server 아님)
 - GitHub 기반 협업
 
 ### 2.3 서버 모델
 - Host는 `클라이언트 + 서버` 역할을 동시에 수행한다.
-- Remote Client는 `입력 의도`만 ServerRpc로 보낸다.
-- 서버는 `입력 검증 -> 상태 게이트 -> 판정 -> NetworkVariable/ClientRpc 반영` 순서로 처리한다.
+- Remote Client는 `입력 의도`만 `[Rpc(SendTo.Server)]`로 보낸다.
+- 서버는 `입력 검증 -> 상태 게이트 -> 판정 -> NetworkVariable / [Rpc(SendTo.ClientsAndHost)] 반영` 순서로 처리한다.
 
 ## 3. 확정된 기획 방향
 
@@ -166,7 +169,7 @@ ARCH MAP (Code Scope)
 - 클라이언트는 결과를 확정하지 않는다.
 - 클라이언트는 `시도` 또는 `의도`만 보낸다.
 - 서버가 최종 판정과 상태를 확정한다.
-- 상태값은 `NetworkVariable`, 사건/연출은 `ClientRpc`, 계산 중간값은 `서버 내부 변수`로 관리한다.
+- 상태값은 `NetworkVariable`, 사건/연출은 `[Rpc(SendTo.ClientsAndHost)]`, 계산 중간값은 `서버 내부 변수`로 관리한다.
 
 ### 7.2 InputValidator 정책
 파일:
@@ -179,8 +182,8 @@ ARCH MAP (Code Scope)
 
 ### 7.3 큐 정책
 현재 큐 사용:
-- `RequestRopeServerRpc`
-- `RequestPerkTriggerServerRpc`
+- `RequestRopeRpc` (`[Rpc(SendTo.Server)]`, `bool hasAnchorHint` 포함 — 2026-05-11 A4-1 propagation)
+- `RequestPerkTriggerRpc` (`[Rpc(SendTo.Server)]`)
 
 큐 비사용:
 - 이동 입력 (`latest intent wins`)

@@ -9,9 +9,11 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 0d939ffd9fc6bb24a83fb5e14cbe1309, type: 3}
+  m_Script: {fileID: 11500000, guid: 0606cc0234635b741b1ff737732ccb7c, type: 3}
   m_Name: AbilityCard 3
-  m_EditorClassIdentifier: 
-  cardName: "\uC624\uB4DC\uC544\uC774\uC988\uB808\uBCFC\uB8E8\uC158\uB4DC\uB798\uACE4"
-  cardIcon: {fileID: 21300000, guid: 930260a83da23984495192332a19b6f6, type: 3}
-  description: 33333
+  m_EditorClassIdentifier: Assembly-CSharp::ArenaCombat.Core.Card.AbilityCard
+  cardName: "\uC0DD\uC874 \uD30C\uB3D9"
+  cardIcon: {fileID: -294562004, guid: af40bb445b3267940b9818a64c4a4d04, type: 3}
+  description: SurvivalPulse
+  skillDefinition: {fileID: 11400000, guid: 218197d632b27c545ae7bb205ec4bcaf, type: 2}
+  skillObjectName:

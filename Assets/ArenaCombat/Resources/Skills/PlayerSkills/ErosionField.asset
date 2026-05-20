@@ -1,0 +1,30 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a193f29c932883b4ba06b526288ee2f4, type: 3}
+  m_Name: ErosionField
+  m_EditorClassIdentifier: Assembly-CSharp::SkillDefinition
+  SkillId: ErosionField
+  DisplayName: "침식 장판"
+  Description: "유도 투사체 명중 지점에 2중 장판 생성. 지속 피해 + 치유 감소."
+  Icon: {fileID: 0}
+  Cooldown: 10
+  Range: 42
+  TargetType: 0
+  RoleTags:
+  - 1
+  - 4
+  - 22
+  CounterTags:
+  - 6
+  - 21
+  AIHint_ConeOrAoE: 9
+  AIHint_Category: 3

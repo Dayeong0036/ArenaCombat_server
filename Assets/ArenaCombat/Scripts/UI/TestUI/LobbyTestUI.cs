@@ -215,7 +215,36 @@ namespace ArenaCombat.UI.TestUI
 
             string code = joinCodeInput.text.ToUpper().Trim();
             AddDebugLog($"Joining lobby... (Code: {code})");
-            await lobbyManager.JoinLobbyByCodeAsync(code);
+
+            if (joinButton != null) joinButton.interactable = false;
+            if (joinCodeInput != null) joinCodeInput.interactable = false;
+
+            try
+            {
+                var lobby = await lobbyManager.JoinLobbyByCodeAsync(code);
+                if (lobby == null)
+                {
+                    AddDebugLog("[ERROR] Invalid lobby code. Please check and try again.");
+                    if (joinCodeInput != null)
+                    {
+                        joinCodeInput.text = "";
+                        joinCodeInput.interactable = true;
+                        joinCodeInput.ActivateInputField();
+                    }
+                    if (joinButton != null) joinButton.interactable = true;
+                }
+            }
+            catch (Exception e)
+            {
+                AddDebugLog($"[ERROR] Join failed: {e.Message}. Please try again.");
+                if (joinCodeInput != null)
+                {
+                    joinCodeInput.text = "";
+                    joinCodeInput.interactable = true;
+                    joinCodeInput.ActivateInputField();
+                }
+                if (joinButton != null) joinButton.interactable = true;
+            }
         }
 
         private async void OnLeaveLobbyClicked()

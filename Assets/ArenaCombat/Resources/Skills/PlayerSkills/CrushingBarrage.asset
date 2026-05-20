@@ -1,0 +1,29 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a193f29c932883b4ba06b526288ee2f4, type: 3}
+  m_Name: CrushingBarrage
+  m_EditorClassIdentifier: Assembly-CSharp::SkillDefinition
+  SkillId: CrushingBarrage
+  DisplayName: "분쇄 연타"
+  Description: "4단 연속 타격. 적중 시 실드 파괴 추가타, 빗나가면 광역 재시도."
+  Icon: {fileID: 0}
+  Cooldown: 6
+  Range: 24
+  TargetType: 3
+  RoleTags:
+  - 19
+  - 12
+  - 10
+  CounterTags:
+  - 2
+  AIHint_ConeOrAoE: 38
+  AIHint_Category: 1

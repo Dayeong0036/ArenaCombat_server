@@ -22,6 +22,13 @@ namespace ArenaCombat.Core.Network
         Disconnected        // Connection lost
     }
 
+    public enum MatchEndReason : byte
+    {
+        None = 0,
+        BossDefeated = 1,
+        AllPlayersDead = 2,
+    }
+
     /// <summary>
     /// Game mode types
     /// </summary>
@@ -153,7 +160,7 @@ namespace ArenaCombat.Core.Network
     public static class TopDown3DConstants
     {
         public const float MAX_MOVE_INPUT_MAGNITUDE = 1f;
-        public const float DEFAULT_MOVE_SPEED = 7f;
+        public const float DEFAULT_MOVE_SPEED = 14f;
         public const float DEFAULT_ROTATION_LERP = 16f;
         public const float DEFAULT_ROPE_SPEED = 18f;
         public const float DEFAULT_ROPE_MAX_DISTANCE = 12f;

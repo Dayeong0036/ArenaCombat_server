@@ -260,7 +260,7 @@ namespace ArenaCombat.Core.Network
 
         #region Game Start
 
-        [SerializeField] private string gameSceneName = "3DScene";
+        [SerializeField] private string gameSceneName = "Chapter1";
 
         /// <summary>
         /// Starts game scene transition. Host only.

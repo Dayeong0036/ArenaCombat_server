@@ -6,6 +6,9 @@ using System;
 using System.Collections.Generic;
 using Unity.Netcode;
 using UnityEngine;
+using ArenaCombat.Core.AI;
+using ArenaCombat.Core.Skill;
+using ArenaCombat.Core.UI;
 
 namespace ArenaCombat.Core.Network
 {
@@ -44,7 +47,7 @@ namespace ArenaCombat.Core.Network
 
         [Header("=== Global Card Draft (Network Sync) ===")]
         [SerializeField] private bool enableGlobalCardDraft = true;
-        [SerializeField] private float cardDraftInterval = 45f;
+        [SerializeField] private float cardDraftInterval = 175f;
         [SerializeField] private float cardDraftDuration = 8f;
         [SerializeField] private bool emitCardDraftDebugLogs = true;
 
@@ -74,6 +77,10 @@ namespace ArenaCombat.Core.Network
         private readonly NetworkVariable<bool> networkCardDraftActive = new(false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
         private readonly NetworkVariable<int> networkCardDraftRound = new(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
         private readonly NetworkVariable<float> networkCardDraftTimer = new(0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+        private readonly NetworkVariable<MatchEndReason> networkMatchEndReason = new(MatchEndReason.None, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
+        public MatchEndReason CurrentMatchEndReason => networkMatchEndReason.Value;
+        public NetworkVariable<MatchEndReason> NetworkMatchEndReason => networkMatchEndReason;
 
         public event Action<MatchState, MatchState> OnMatchStateChanged;
         public event Action<GameMode> OnGameModeChanged;
@@ -151,6 +158,16 @@ namespace ArenaCombat.Core.Network
             }
 
             UpdateRuntimeTimerDebugFields();
+            EnsureMatchEndUI();
+        }
+
+        private void EnsureMatchEndUI()
+        {
+            if (MatchEndUI.Instance == null)
+            {
+                var go = new GameObject("MatchEndUI");
+                go.AddComponent<MatchEndUI>();
+            }
         }
 
         public override void OnNetworkDespawn()
@@ -440,16 +457,68 @@ namespace ArenaCombat.Core.Network
             }
         }
 
-        public void EndMatch()
+        public void EndMatch(MatchEndReason reason = MatchEndReason.None)
         {
             if (!IsServer) return;
+            if (networkMatchState.Value == MatchState.MatchEnd) return;
+            if (!IsValidTransition(networkMatchState.Value, MatchState.MatchEnd)) return;
 
-            if (networkMatchState.Value == MatchState.InProgress ||
-                networkMatchState.Value == MatchState.Paused ||
-                networkMatchState.Value == MatchState.RoundEnd)
+            networkMatchEndReason.Value = reason;
+            TransitionToState(MatchState.MatchEnd);
+        }
+
+        [Rpc(SendTo.Server, RequireOwnership = false)]
+        public void RequestRestartRpc(RpcParams rpcParams = default)
+        {
+            if (!IsServer) return;
+            if (networkMatchState.Value != MatchState.MatchEnd) return;
+            RestartMatch();
+        }
+
+        private void RestartMatch()
+        {
+            if (BossManager.Instance != null)
+                BossManager.Instance.DespawnBoss();
+
+            if (CombatManager3D.Instance != null)
             {
-                TransitionToState(MatchState.MatchEnd);
+                var snapshot = CombatManager3D.Instance.GetAllPlayersSnapshot();
+                foreach (var kvp in snapshot)
+                {
+                    var player = kvp.Value;
+                    if (player == null) continue;
+
+                    var skillMgr = player.GetComponent<SkillManager>();
+                    if (skillMgr != null)
+                    {
+                        skillMgr.ClearAll();
+                        skillMgr.SetAutoCast(true);
+                    }
+
+                    var skillExec = player.GetComponent<SkillExecutor>();
+                    if (skillExec != null)
+                        skillExec.ResetAll();
+
+                    Vector3 spawnPos = PlayerSpawnManager.Instance != null
+                        ? PlayerSpawnManager.Instance.GetRespawnPosition(kvp.Key)
+                        : player.transform.position;
+                    player.Respawn(spawnPos);
+
+                    // BAL-1: Respawn은 슬롯을 건드리지 않음. ClearAll 후 초기 스킬 재적용 필요.
+                    player.ApplyInitialLoadoutServer();
+                    player.NotifySkillResetToOwner();
+                }
             }
+
+            networkMatchEndReason.Value = MatchEndReason.None;
+            ResetCardDraftStateServer(resetRound: true, clearHistory: true);
+            networkRoundNumber.Value = 0;
+
+            if (PlayerBiasTracker.Instance != null)
+                PlayerBiasTracker.Instance.ResetAllCounters();
+
+            TransitionToState(MatchState.WaitingForPlayers);
+            StartMatchCountdown();
         }
 
         public void ResetToWaiting()
@@ -457,6 +526,7 @@ namespace ArenaCombat.Core.Network
             if (!IsServer) return;
 
             networkMatchState.Value = MatchState.WaitingForPlayers;
+            networkMatchEndReason.Value = MatchEndReason.None;
             networkRoundNumber.Value = 0;
             StopTimer();
             ResetCardDraftStateServer(resetRound: true, clearHistory: true);
@@ -578,12 +648,16 @@ namespace ArenaCombat.Core.Network
 
         private int GetConnectedPlayerCount()
         {
-            if (NetworkManager.Singleton == null || NetworkManager.Singleton.ConnectedClientsList == null)
-            {
+            if (NetworkManager.Singleton == null || NetworkManager.Singleton.SpawnManager == null)
                 return 0;
-            }
 
-            return NetworkManager.Singleton.ConnectedClientsList.Count;
+            int count = 0;
+            foreach (var kv in NetworkManager.Singleton.SpawnManager.SpawnedObjects)
+            {
+                if (kv.Value != null && kv.Value.IsPlayerObject)
+                    count++;
+            }
+            return count;
         }
         public void RegisterCardCatalogSize(int cardCount)
         {

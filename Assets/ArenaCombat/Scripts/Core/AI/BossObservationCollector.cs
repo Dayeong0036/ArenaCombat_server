@@ -22,8 +22,10 @@ namespace ArenaCombat.Core.AI
         [SerializeField] private float _maxDistance = 55f;
         [SerializeField] private float _maxCooldown = 30f;
         // BAL-1 T1A: Player 14 m/s + burst damage 최대 ~95 (R3+R4) 반영
+#pragma warning disable CS0414
         [SerializeField] private float _maxBurstDmg = 120f;
         [SerializeField] private float _maxSpeed = 16f;
+#pragma warning restore CS0414
         [SerializeField] private int _maxBossPhase = 4;
 
         private GameObject _p1;

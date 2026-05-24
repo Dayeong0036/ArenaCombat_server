@@ -49,7 +49,9 @@ namespace ArenaCombat.Core.Network
         [SerializeField] private float moveSpeed = TopDown3DConstants.DEFAULT_MOVE_SPEED;
         [SerializeField] private float rotationLerp = TopDown3DConstants.DEFAULT_ROTATION_LERP;
         [SerializeField] private float inputSendRate = NetworkTickRate.INPUT_SEND_RATE;
+#pragma warning disable CS0414
         [SerializeField] private float positionSyncThreshold = 0.15f;
+#pragma warning restore CS0414
 
         [Header("=== Survival Settings ===")]
         [SerializeField] private float respawnTime = CombatConstants.RESPAWN_TIME;
@@ -171,11 +173,32 @@ namespace ArenaCombat.Core.Network
             NetworkVariableWritePermission.Server
         );
 
+        private readonly NetworkVariable<float> networkShield = new NetworkVariable<float>(
+            0f,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server
+        );
+
+        private readonly NetworkVariable<BuffMask> networkBuffMask = new NetworkVariable<BuffMask>(
+            BuffMask.None,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server
+        );
+
+        private readonly NetworkVariable<DebuffMask> networkDebuffMask = new NetworkVariable<DebuffMask>(
+            DebuffMask.None,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server
+        );
+
         #endregion
 
         #region Public Properties
 
         public float CurrentHP => networkHP.Value;
+        public float CurrentShield => networkShield.Value;
+        public BuffMask CurrentBuffs => networkBuffMask.Value;
+        public DebuffMask CurrentDebuffs => networkDebuffMask.Value;
         public float MaxHP => maxHP;
         public bool IsAlive => networkIsAlive.Value;
         public CharacterStateId CurrentStateId => networkStateId.Value;
@@ -321,8 +344,7 @@ namespace ArenaCombat.Core.Network
                 }
                 return;
             }
-            var skillMgr = GetComponent<ArenaCombat.Core.Skill.SkillManager>();
-            if (skillMgr != null) skillMgr.SetSlot(0, _initialSkillSO);
+            SetSkillSlotServer(0, _initialSkillSO);
         }
 
         public override void OnNetworkSpawn()
@@ -342,8 +364,18 @@ namespace ArenaCombat.Core.Network
 
             if (IsServer)
             {
-                // X3-3: initialize StatManager authority. Sync hook in FixedUpdate
-                // mirrors _statMgr.GetHP() / IsAlive into networkHP / networkIsAlive.
+                if (_statMgr != null)
+                {
+                    _statMgr.OnStatusApplied += HandleStatManagerStatusApplied;
+                    _statMgr.OnStatusRemoved += HandleStatManagerStatusRemoved;
+                    _statMgr.OnStatusBulkCleared += HandleStatManagerStatusBulkCleared;
+                    _statMgr.OnBuffApplied += HandleBuffApplied;
+                    _statMgr.OnBuffRemoved += HandleBuffRemoved;
+                    _statMgr.OnDebuffApplied += HandleDebuffApplied;
+                    _statMgr.OnDebuffRemoved += HandleDebuffRemoved;
+                    _statMgr.OnBuffDebuffBulkCleared += HandleBuffDebuffBulkCleared;
+                }
+
                 InitializeStatManager();
 
                 networkHP.Value = maxHP;
@@ -369,7 +401,6 @@ namespace ArenaCombat.Core.Network
 
                 PlayerBiasTracker.Instance?.RegisterPlayer(OwnerClientId);
 
-                // BAL-1: 매치 시작 시 slot 0에 starter 스킬 자동 장착.
                 ApplyInitialLoadoutServer();
 
                 var biasExec = GetComponent<SkillExecutor>();
@@ -388,12 +419,6 @@ namespace ArenaCombat.Core.Network
                     };
                     biasExec.OnExecuted += _cooldownSyncHandler;
                 }
-            }
-
-            if (!IsServer && _initialSkillSO != null)
-            {
-                var skillMgr = GetComponent<ArenaCombat.Core.Skill.SkillManager>();
-                if (skillMgr != null) skillMgr.SetSlot(0, _initialSkillSO);
             }
 
             if (IsOwner && !_isBTControlled)
@@ -481,6 +506,18 @@ namespace ArenaCombat.Core.Network
                 queuedServerActions.Clear();
             }
 
+            if (_statMgr != null)
+            {
+                _statMgr.OnStatusApplied -= HandleStatManagerStatusApplied;
+                _statMgr.OnStatusRemoved -= HandleStatManagerStatusRemoved;
+                _statMgr.OnStatusBulkCleared -= HandleStatManagerStatusBulkCleared;
+                _statMgr.OnBuffApplied -= HandleBuffApplied;
+                _statMgr.OnBuffRemoved -= HandleBuffRemoved;
+                _statMgr.OnDebuffApplied -= HandleDebuffApplied;
+                _statMgr.OnDebuffRemoved -= HandleDebuffRemoved;
+                _statMgr.OnBuffDebuffBulkCleared -= HandleBuffDebuffBulkCleared;
+            }
+
             suppressInterpolationUntil = 0f;
             ownerCamera = null;
             ClearInspectorRuntimeDebug();
@@ -506,22 +543,18 @@ namespace ArenaCombat.Core.Network
 
             if (!IsServer)
             {
-                InterpolatePosition();
-                if (IsOwner && !_isBTControlled
-                    && networkIsAlive.Value
-                    && StatusHelper.CanMove(networkStatusMask.Value)
-                    && !networkIsRoping.Value
-                    && !IsLocalGameplayBlockedByCardDraft())
+                if (CanPredictMovement)
                 {
+                    PredictPosition();
+                    ReconcileWithServer();
                     Quaternion aimRot = Quaternion.Euler(0f, NormalizeYaw(cachedLookYaw), 0f);
                     transform.rotation = Quaternion.Slerp(transform.rotation, aimRot, Time.deltaTime * rotationLerp);
                 }
                 else
                 {
+                    InterpolatePosition();
                     InterpolateRotation();
                 }
-                // B5-1 followup: non-server Rigidbody is non-kinematic too (line 281) so it can
-                // accumulate collision torque locally before interpolation corrects. Clear here.
                 ClearPhysicsAngularVelocity();
             }
 
@@ -541,6 +574,7 @@ namespace ArenaCombat.Core.Network
             {
                 ProcessQueuedServerActions();
                 ProcessServerMovement();
+                _statMgr?.Tick(Time.fixedDeltaTime);
 
                 if (MapBounds3D.Instance != null)
                 {
@@ -578,6 +612,11 @@ namespace ArenaCombat.Core.Network
                 float statHP = _statMgr.GetHP();
                 if (!Mathf.Approximately(networkHP.Value, statHP))
                     networkHP.Value = statHP;
+
+                float statShield = _statMgr.GetShield();
+                if (!Mathf.Approximately(networkShield.Value, statShield))
+                    networkShield.Value = statShield;
+
                 if (networkIsAlive.Value && !_statMgr.IsAlive)
                     Die(_lastAttackerId);
             }
@@ -1323,7 +1362,9 @@ namespace ArenaCombat.Core.Network
 
             networkIsRoping.Value = false;
             isRopeMoving = false;
-            RemoveStatus(StatusMask.Rooted);
+            bool statMgrRootActive = _statMgr != null && _statMgr.HasStatus(StatusType.Rooted);
+            if (!statMgrRootActive)
+                RemoveStatus(StatusMask.Rooted);
             SetStateId(CharacterStateId.Idle);
             RopeEndRpc();
         }
@@ -1550,9 +1591,16 @@ namespace ArenaCombat.Core.Network
         private void Die(ulong killerId)
         {
             networkHP.Value = 0f;
+            networkShield.Value = 0f;
             networkIsAlive.Value = false;
-            if (_statMgr != null) _statMgr.SetHP(0f);
+            if (_statMgr != null)
+            {
+                _statMgr.SetHP(0f);
+                _statMgr.ClearAllEffects();
+            }
             networkStatusMask.Value = StatusMask.None;
+            networkBuffMask.Value = BuffMask.None;
+            networkDebuffMask.Value = DebuffMask.None;
             SetStateId(CharacterStateId.Dead);
             queuedServerActions.Clear();
             serverMoveInput = Vector2.zero;
@@ -1590,12 +1638,17 @@ namespace ArenaCombat.Core.Network
                 position = MapBounds3D.Instance.GetSafeSpawnPoint(position);
             }
 
+            if (_statMgr != null) _statMgr.ClearAllEffects();
+
             // X3-3 (Codex C-1): reset StatManager authority on respawn. Without this,
             // _statMgr._currentHP stays 0 and _isAlive stays false from death; next
             // FixedUpdate sync would re-flip networkIsAlive to dead.
             InitializeStatManager();
 
             networkHP.Value = maxHP;
+            networkShield.Value = 0f;
+            networkBuffMask.Value = BuffMask.None;
+            networkDebuffMask.Value = DebuffMask.None;
             networkIsAlive.Value = true;
             networkStatusMask.Value = StatusMask.None;
             SetStateId(CharacterStateId.Idle);
@@ -1637,6 +1690,78 @@ namespace ArenaCombat.Core.Network
             }
 
             networkStatusMask.Value = StatusHelper.RemoveStatus(networkStatusMask.Value, status);
+        }
+
+        private void HandleStatManagerStatusApplied(StatusType type, float duration)
+        {
+            if (!IsServer) return;
+            StatusMask mask = StatusHelper.StatusTypeToMask(type);
+            if (mask == StatusMask.None) return;
+            AddStatus(mask);
+        }
+
+        private void HandleStatManagerStatusRemoved(StatusType type)
+        {
+            if (!IsServer) return;
+            StatusMask mask = StatusHelper.StatusTypeToMask(type);
+            if (mask == StatusMask.None) return;
+
+            if (mask == StatusMask.Stunned)
+            {
+                bool otherStunActive = (type == StatusType.Stunned && _statMgr.HasStatus(StatusType.HitStun))
+                                    || (type == StatusType.HitStun && _statMgr.HasStatus(StatusType.Stunned));
+                if (otherStunActive || parryStunTimer > 0f) return;
+            }
+
+            if (mask == StatusMask.Invulnerable && invulnerabilityTimer > 0f) return;
+            if (mask == StatusMask.Rooted && isRopeMoving) return;
+
+            RemoveStatus(mask);
+        }
+
+        private void HandleStatManagerStatusBulkCleared()
+        {
+            if (!IsServer) return;
+            networkStatusMask.Value = StatusMask.None;
+        }
+
+        private void HandleBuffApplied(BuffType type, float duration)
+        {
+            if (!IsServer) return;
+            BuffMask mask = StatusHelper.BuffTypeToMask(type);
+            if (mask != BuffMask.None)
+                networkBuffMask.Value |= mask;
+        }
+
+        private void HandleBuffRemoved(BuffType type)
+        {
+            if (!IsServer) return;
+            BuffMask mask = StatusHelper.BuffTypeToMask(type);
+            if (mask != BuffMask.None)
+                networkBuffMask.Value &= ~mask;
+        }
+
+        private void HandleDebuffApplied(DebuffType type, float duration)
+        {
+            if (!IsServer) return;
+            DebuffMask mask = StatusHelper.DebuffTypeToMask(type);
+            if (mask != DebuffMask.None)
+                networkDebuffMask.Value |= mask;
+        }
+
+        private void HandleDebuffRemoved(DebuffType type)
+        {
+            if (!IsServer) return;
+            DebuffMask mask = StatusHelper.DebuffTypeToMask(type);
+            if (mask != DebuffMask.None)
+                networkDebuffMask.Value &= ~mask;
+        }
+
+        private void HandleBuffDebuffBulkCleared()
+        {
+            if (!IsServer) return;
+            networkBuffMask.Value = BuffMask.None;
+            networkDebuffMask.Value = DebuffMask.None;
         }
 
         private void SetStateId(CharacterStateId stateId)
@@ -1689,7 +1814,9 @@ namespace ArenaCombat.Core.Network
                 invulnerabilityTimer -= dt;
                 if (invulnerabilityTimer <= 0f)
                 {
-                    RemoveStatus(StatusMask.Invulnerable);
+                    bool statMgrInvulnActive = _statMgr != null && _statMgr.HasStatus(StatusType.Invulnerable);
+                    if (!statMgrInvulnActive)
+                        RemoveStatus(StatusMask.Invulnerable);
                 }
             }
 
@@ -1713,7 +1840,10 @@ namespace ArenaCombat.Core.Network
                 parryStunTimer -= dt;
                 if (parryStunTimer <= 0f)
                 {
-                    RemoveStatus(StatusMask.Stunned);
+                    bool statMgrStunActive = _statMgr != null &&
+                        (_statMgr.HasStatus(StatusType.Stunned) || _statMgr.HasStatus(StatusType.HitStun));
+                    if (!statMgrStunActive)
+                        RemoveStatus(StatusMask.Stunned);
                 }
             }
 
@@ -1772,6 +1902,10 @@ namespace ArenaCombat.Core.Network
             // Applied through interpolation in Update.
         }
 
+        private const float PositionInterpSpeed = 30f;
+        private const float RotationInterpSpeed = 30f;
+        private const float SnapDistance = 8f;
+
         private void InterpolatePosition()
         {
             if (Time.time < suppressInterpolationUntil)
@@ -1780,17 +1914,61 @@ namespace ArenaCombat.Core.Network
             }
 
             float distance = Vector3.Distance(transform.position, networkPosition.Value);
-            if (distance > positionSyncThreshold)
+            if (distance > SnapDistance)
             {
-                float t = distance > 2f ? 0.5f : 0.2f;
-                transform.position = Vector3.Lerp(transform.position, networkPosition.Value, t);
+                transform.position = networkPosition.Value;
+            }
+            else if (distance > 0.001f)
+            {
+                transform.position = Vector3.Lerp(transform.position, networkPosition.Value, Time.deltaTime * PositionInterpSpeed);
             }
         }
 
         private void InterpolateRotation()
         {
             Quaternion targetRot = Quaternion.Euler(0f, networkYaw.Value, 0f);
-            transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, 0.2f);
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, Time.deltaTime * RotationInterpSpeed);
+        }
+
+        // ── Owner client-side prediction ────────────────────────
+        private const float ReconcileThreshold = 0.5f;
+        private const float ReconcileSpeed     = 8f;
+        private const float ReconcileSnapDist  = 8f;
+
+        private bool CanPredictMovement =>
+            IsOwner && !_isBTControlled
+            && networkIsAlive.Value
+            && StatusHelper.CanMove(networkStatusMask.Value)
+            && !networkIsRoping.Value
+            && !IsLocalGameplayBlockedByCardDraft();
+
+        private void PredictPosition()
+        {
+            if (Time.time < suppressInterpolationUntil) return;
+            Vector2 input = cachedMoveInput;
+            if (input.sqrMagnitude > 1f) input.Normalize();
+            Vector3 velocity = new Vector3(input.x, 0f, input.y) * moveSpeed;
+            if (StatusHelper.HasStatus(networkStatusMask.Value, StatusMask.Slowed))
+                velocity *= 0.6f;
+            Vector3 predicted = transform.position + velocity * Time.deltaTime;
+            if (MapBounds3D.Instance != null)
+                predicted = MapBounds3D.Instance.ClampToHorizontalBounds(predicted);
+            transform.position = predicted;
+        }
+
+        private void ReconcileWithServer()
+        {
+            if (Time.time < suppressInterpolationUntil)
+            {
+                transform.position = networkPosition.Value;
+                return;
+            }
+            Vector3 serverPos = networkPosition.Value;
+            float dist = Vector3.Distance(transform.position, serverPos);
+            if (dist > ReconcileSnapDist)
+                transform.position = serverPos;
+            else if (dist > ReconcileThreshold)
+                transform.position = Vector3.Lerp(transform.position, serverPos, Time.deltaTime * ReconcileSpeed);
         }
 
         #endregion
@@ -1935,8 +2113,35 @@ namespace ArenaCombat.Core.Network
             if (skillMgr != null)
             {
                 skillMgr.ClearAll();
+                skillMgr.SetAutoCast(true);
                 if (_initialSkillSO != null) skillMgr.SetSlot(0, _initialSkillSO);
             }
+        }
+
+        public void SetSkillSlotServer(int slotIndex, SkillDefinition skill)
+        {
+            if (!IsServer) return;
+            var skillMgr = GetComponent<SkillManager>();
+            if (skillMgr == null) return;
+            skillMgr.SetSlot(slotIndex, skill);
+            SkillSlotSetRpc(slotIndex, skill != null ? skill.SkillId : "");
+        }
+
+        [Rpc(SendTo.Owner)]
+        private void SkillSlotSetRpc(int slotIndex, string skillId)
+        {
+            if (IsServer) return;
+            var skillMgr = GetComponent<SkillManager>();
+            if (skillMgr == null) return;
+            if (string.IsNullOrEmpty(skillId))
+            {
+                skillMgr.ClearSlot(slotIndex);
+                return;
+            }
+            var registry = GameManager.Instance?.SkillRegistry;
+            if (registry == null) return;
+            var def = registry.Get(skillId);
+            if (def != null) skillMgr.SetSlot(slotIndex, def);
         }
 
         [Rpc(SendTo.ClientsAndHost)]
@@ -2120,7 +2325,7 @@ namespace ArenaCombat.Core.Network
         // ── State (read-only forwards) ──
         float ICombatant.MaxHP => MaxHP;
         float ICombatant.CurrentHPPercent => _statMgr != null ? _statMgr.GetHPPercent() : (MaxHP > 0f ? CurrentHP / MaxHP : 0f);
-        float ICombatant.Shield => _statMgr != null ? _statMgr.GetShield() : 0f;
+        float ICombatant.Shield => networkShield.Value;
         bool  ICombatant.IsAlive => IsAlive;
         bool  ICombatant.IsCasting => _statMgr != null && _statMgr.IsCasting;
         bool  ICombatant.IsParrying => IsParrying;
@@ -2133,36 +2338,38 @@ namespace ArenaCombat.Core.Network
 
         void ICombatant.TakeDamage(float amount, ICombatant attacker)
         {
+            if (!IsServer) return;
             _lastAttackerId = attacker is PlayerNetworkController3D pnc ? pnc.OwnerClientId : 0UL;
             _statMgr?.ReceiveDamage(amount, attacker);
         }
 
         void ICombatant.TakeShieldBreakDamage(float amount, float multiplier, ICombatant attacker)
         {
+            if (!IsServer) return;
             _lastAttackerId = attacker is PlayerNetworkController3D pnc ? pnc.OwnerClientId : 0UL;
             _statMgr?.ReceiveShieldBreakDamage(amount, multiplier, attacker);
         }
 
-        void ICombatant.RecoverHP(float amount) => _statMgr?.RecoverHP(amount);
-        void ICombatant.AddShield(float amount) => _statMgr?.AddShield(amount);
+        void ICombatant.RecoverHP(float amount) { if (!IsServer) return; _statMgr?.RecoverHP(amount); }
+        void ICombatant.AddShield(float amount) { if (!IsServer) return; _statMgr?.AddShield(amount); }
 
-        void ICombatant.ApplyStatus(StatusType type, float duration, float value) =>
-            _statMgr?.ApplyStatus(type, duration, value);
+        void ICombatant.ApplyStatus(StatusType type, float duration, float value)
+        { if (!IsServer) return; _statMgr?.ApplyStatus(type, duration, value); }
 
         bool ICombatant.HasStatus(StatusType type) =>
             _statMgr != null && _statMgr.HasStatus(type);
 
-        void ICombatant.ApplyBuff(BuffType type, float duration, float value) =>
-            _statMgr?.ApplyBuff(type, duration, value);
+        void ICombatant.ApplyBuff(BuffType type, float duration, float value)
+        { if (!IsServer) return; _statMgr?.ApplyBuff(type, duration, value); }
 
-        void ICombatant.ApplyDebuff(DebuffType type, float duration, float value) =>
-            _statMgr?.ApplyDebuff(type, duration, value);
+        void ICombatant.ApplyDebuff(DebuffType type, float duration, float value)
+        { if (!IsServer) return; _statMgr?.ApplyDebuff(type, duration, value); }
 
-        void ICombatant.RemoveStatuses(CleanseType type, int count) =>
-            _statMgr?.RemoveStatuses(type, count);
+        void ICombatant.RemoveStatuses(CleanseType type, int count)
+        { if (!IsServer) return; _statMgr?.RemoveStatuses(type, count); }
 
-        void ICombatant.RemoveBuffs(DispelType type, int count) =>
-            _statMgr?.RemoveBuffs(type, count);
+        void ICombatant.RemoveBuffs(DispelType type, int count)
+        { if (!IsServer) return; _statMgr?.RemoveBuffs(type, count); }
 
         // X3-4: instant displacement with MapBounds3D clamp + immediate NV mirror.
         // Codex C-1: networkPosition.Value sync inside helper (not deferred to FixedUpdate)
@@ -2202,7 +2409,7 @@ namespace ArenaCombat.Core.Network
             networkPosition.Value = target;   // Codex C-1: immediate NV mirror.
         }
 
-        void ICombatant.NotifyParryReward(ParryRewardType rewardType, float value, float duration, ICombatant attacker) =>
-            _statMgr?.NotifyParryReward(rewardType, value, duration, attacker);
+        void ICombatant.NotifyParryReward(ParryRewardType rewardType, float value, float duration, ICombatant attacker)
+        { if (!IsServer) return; _statMgr?.NotifyParryReward(rewardType, value, duration, attacker); }
     }
 }

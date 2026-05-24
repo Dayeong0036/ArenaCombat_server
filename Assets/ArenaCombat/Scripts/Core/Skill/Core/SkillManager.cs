@@ -61,7 +61,7 @@ namespace ArenaCombat.Core.Skill
 
         [Header("Settings")]
         [SerializeField] private bool _autoCastEnabled = true;
-        [SerializeField] private bool _logAutoCast = true;
+        [SerializeField] private bool _logAutoCast = false;
         [SerializeField] private bool _roundRobinEnabled = false;
 
         private int _roundRobinStart = 0;
@@ -107,6 +107,7 @@ namespace ArenaCombat.Core.Skill
         private SkillDefinition _pendingSkill;
 
         public event System.Action<SkillDefinition, SkillContext, float> OnTelegraphStarted;
+        public event System.Action OnTelegraphCancelled;
 
         // ══════════════════════════════════════════════════════════
         // Initialization
@@ -286,6 +287,7 @@ namespace ArenaCombat.Core.Skill
             _isTelegraphing = false;
             _telegraphTimer = 0f;
             _pendingSkill = null;
+            OnTelegraphCancelled?.Invoke();
         }
 
         // ══════════════════════════════════════════════════════════
@@ -374,18 +376,19 @@ namespace ArenaCombat.Core.Skill
         private bool CanCast(SkillDefinition skill, out SkillContext ctx)
         {
             ctx = null;
+            bool logThisFrame = _logAutoCast && Time.frameCount % 300 == 0;
             if (skill == null || !skill.IsReady)
             {
-                if (_logAutoCast) Debug.LogWarning($"[CanCast] {skill?.SkillId ?? "null"} failed: IsReady={skill?.IsReady}");
+                if (logThisFrame) Debug.LogWarning($"[CanCast] {skill?.SkillId ?? "null"} failed: IsReady={skill?.IsReady}");
                 return false;
             }
 
             if (!_executor.CanUse(skill))
-                return false;   // Cooldown — would spam every frame, skip log.
+                return false;
 
             if (_stateManager != null && !_stateManager.CanCast)
             {
-                if (_logAutoCast) Debug.LogWarning($"[CanCast] {skill.SkillId} failed: CanCast=false (State={_stateManager.CurrentState})");
+                if (logThisFrame) Debug.LogWarning($"[CanCast] {skill.SkillId} failed: CanCast=false (State={_stateManager.CurrentState})");
                 return false;
             }
 
@@ -395,14 +398,14 @@ namespace ArenaCombat.Core.Skill
                 target = FindNearestTarget();
                 if (target == null || !target.IsAlive)
                 {
-                    if (_logAutoCast) Debug.LogWarning($"[CanCast] {skill.SkillId} failed: no target (candidates={(_gameManager != null ? (_statManager != null && _statManager.Kind == CombatantKind.Boss ? _gameManager.Players.Count : _gameManager.Bosses.Count) : -1)})");
+                    if (logThisFrame) Debug.LogWarning($"[CanCast] {skill.SkillId} failed: no target (candidates={(_gameManager != null ? (_statManager != null && _statManager.Kind == CombatantKind.Boss ? _gameManager.Players.Count : _gameManager.Bosses.Count) : -1)})");
                     return false;
                 }
 
                 float dist = Vector3.Distance(transform.position, target.Transform.position);
                 if (dist > skill.Range)
                 {
-                    if (_logAutoCast) Debug.LogWarning($"[CanCast] {skill.SkillId} failed: out of range ({dist:F1}m > {skill.Range}m)");
+                    if (logThisFrame) Debug.LogWarning($"[CanCast] {skill.SkillId} failed: out of range ({dist:F1}m > {skill.Range}m)");
                     return false;
                 }
             }

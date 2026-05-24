@@ -3,6 +3,8 @@
 // ARCH STATUS: TARGET_3D_PENDING
 
 using System;
+using ArenaCombat.Core.Combat;
+using ArenaCombat.Core.Skill;
 
 namespace ArenaCombat.Core.Network
 {
@@ -80,6 +82,26 @@ namespace ArenaCombat.Core.Network
         Poisoned = 1 << 7,      // Damage over time
         Frozen = 1 << 8,        // Cannot act + visual effect
         Invisible = 1 << 9     // Hidden from enemies
+    }
+
+    [Flags]
+    public enum BuffMask : byte
+    {
+        None          = 0,
+        DamageUp      = 1 << 0,
+        DefenseUp     = 1 << 1,
+        ParryWindowUp = 1 << 2,
+        ParryRewardUp = 1 << 3,
+    }
+
+    [Flags]
+    public enum DebuffMask : byte
+    {
+        None            = 0,
+        DamageDown      = 1 << 0,
+        DefenseDown     = 1 << 1,
+        SelfDefenseDown = 1 << 2,
+        Mark            = 1 << 3,
     }
 
     /// <summary>
@@ -224,5 +246,38 @@ namespace ArenaCombat.Core.Network
         {
             return !HasStatus(status, StatusMask.SuperArmor | StatusMask.Invulnerable);
         }
+
+        public static StatusMask StatusTypeToMask(StatusType type)
+        {
+            switch (type)
+            {
+                case StatusType.Stunned:        return StatusMask.Stunned;
+                case StatusType.HitStun:        return StatusMask.Stunned;
+                case StatusType.Rooted:         return StatusMask.Rooted;
+                case StatusType.Slowed:         return StatusMask.Slowed;
+                case StatusType.Silence:        return StatusMask.Silenced;
+                case StatusType.Invulnerable:   return StatusMask.Invulnerable;
+                case StatusType.DamageOverTime: return StatusMask.Burning;
+                default:                        return StatusMask.None;
+            }
+        }
+
+        public static BuffMask BuffTypeToMask(BuffType type) => type switch
+        {
+            BuffType.DamageUp      => BuffMask.DamageUp,
+            BuffType.DefenseUp     => BuffMask.DefenseUp,
+            BuffType.ParryWindowUp => BuffMask.ParryWindowUp,
+            BuffType.ParryRewardUp => BuffMask.ParryRewardUp,
+            _                      => BuffMask.None,
+        };
+
+        public static DebuffMask DebuffTypeToMask(DebuffType type) => type switch
+        {
+            DebuffType.DamageDown      => DebuffMask.DamageDown,
+            DebuffType.DefenseDown     => DebuffMask.DefenseDown,
+            DebuffType.SelfDefenseDown => DebuffMask.SelfDefenseDown,
+            DebuffType.Mark            => DebuffMask.Mark,
+            _                          => DebuffMask.None,
+        };
     }
 }

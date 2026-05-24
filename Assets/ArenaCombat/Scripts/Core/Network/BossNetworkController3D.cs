@@ -103,6 +103,11 @@ namespace ArenaCombat.Core.Network
             NetworkVariableReadPermission.Everyone,
             NetworkVariableWritePermission.Server);
 
+        private readonly NetworkVariable<float> networkYaw = new NetworkVariable<float>(
+            0f,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server);
+
         // X4-6 phase tracking. Uses the project-wide BossPhase enum (NetworkConstants.cs)
         // — not raw int — to avoid X4-7 FSM interpretation conflicts (Codex X4-6 C-1).
         // Defaults to None; InitializeStatManager flips to Phase1 on successful spawn,
@@ -112,7 +117,25 @@ namespace ArenaCombat.Core.Network
             NetworkVariableReadPermission.Everyone,
             NetworkVariableWritePermission.Server);
 
+        private readonly NetworkVariable<StatusMask> networkStatusMask = new NetworkVariable<StatusMask>(
+            StatusMask.None,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server);
+
+        private readonly NetworkVariable<BuffMask> networkBuffMask = new NetworkVariable<BuffMask>(
+            BuffMask.None,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server);
+
+        private readonly NetworkVariable<DebuffMask> networkDebuffMask = new NetworkVariable<DebuffMask>(
+            DebuffMask.None,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server);
+
         public BossPhase CurrentPhase => networkCurrentPhase.Value;
+        public StatusMask CurrentStatus => networkStatusMask.Value;
+        public BuffMask CurrentBuffs => networkBuffMask.Value;
+        public DebuffMask CurrentDebuffs => networkDebuffMask.Value;
 
         public event System.Action<ulong> BossDefeated;
 
@@ -139,6 +162,7 @@ namespace ArenaCombat.Core.Network
                 _skillMgr = skillManager;
                 skillManager.SetAutoCast(false);
                 skillManager.OnTelegraphStarted += HandleTelegraphStarted;
+                skillManager.OnTelegraphCancelled += HandleTelegraphCancelled;
             }
             if (TryGetComponent<SkillExecutor>(out var skillExec))
                 _skillExec = skillExec;
@@ -160,10 +184,14 @@ namespace ArenaCombat.Core.Network
             }
         }
 
-        private void OnDestroy()
+        private new void OnDestroy()
         {
+            base.OnDestroy();
             if (_skillMgr != null)
+            {
                 _skillMgr.OnTelegraphStarted -= HandleTelegraphStarted;
+                _skillMgr.OnTelegraphCancelled -= HandleTelegraphCancelled;
+            }
         }
 
         public override void OnNetworkSpawn()
@@ -172,14 +200,29 @@ namespace ArenaCombat.Core.Network
 
             if (IsServer)
             {
+                if (_statMgr != null)
+                {
+                    _statMgr.OnStatusApplied += HandleStatManagerStatusApplied;
+                    _statMgr.OnStatusRemoved += HandleStatManagerStatusRemoved;
+                    _statMgr.OnStatusBulkCleared += HandleStatManagerStatusBulkCleared;
+                    _statMgr.OnBuffApplied += HandleBuffApplied;
+                    _statMgr.OnBuffRemoved += HandleBuffRemoved;
+                    _statMgr.OnDebuffApplied += HandleDebuffApplied;
+                    _statMgr.OnDebuffRemoved += HandleDebuffRemoved;
+                    _statMgr.OnBuffDebuffBulkCleared += HandleBuffDebuffBulkCleared;
+                }
+
                 _lastValidatedServerPosition = transform.position;
                 networkPosition.Value = transform.position;
+                networkYaw.Value = transform.eulerAngles.y;
                 InitializeStatManager();
             }
             else
             {
                 transform.position = networkPosition.Value;
+                transform.rotation = Quaternion.Euler(0f, networkYaw.Value, 0f);
                 networkPosition.OnValueChanged += HandlePositionChanged;
+                networkYaw.OnValueChanged += HandleYawChanged;
             }
 
             if (IsClient)
@@ -190,8 +233,23 @@ namespace ArenaCombat.Core.Network
         {
             base.OnNetworkDespawn();
 
+            if (_statMgr != null)
+            {
+                _statMgr.OnStatusApplied -= HandleStatManagerStatusApplied;
+                _statMgr.OnStatusRemoved -= HandleStatManagerStatusRemoved;
+                _statMgr.OnStatusBulkCleared -= HandleStatManagerStatusBulkCleared;
+                _statMgr.OnBuffApplied -= HandleBuffApplied;
+                _statMgr.OnBuffRemoved -= HandleBuffRemoved;
+                _statMgr.OnDebuffApplied -= HandleDebuffApplied;
+                _statMgr.OnDebuffRemoved -= HandleDebuffRemoved;
+                _statMgr.OnBuffDebuffBulkCleared -= HandleBuffDebuffBulkCleared;
+            }
+
             if (!IsServer)
+            {
                 networkPosition.OnValueChanged -= HandlePositionChanged;
+                networkYaw.OnValueChanged -= HandleYawChanged;
+            }
 
             if (IsClient)
                 networkCurrentPhase.OnValueChanged -= HandlePhaseChangedClient;
@@ -200,7 +258,7 @@ namespace ArenaCombat.Core.Network
             _wasBusy = false;
         }
 
-        private const float InterpSpeed = 18f;
+        private const float InterpSpeed = 30f;
         private Vector3 _interpTarget;
         private bool _interpActive;
 
@@ -210,10 +268,26 @@ namespace ArenaCombat.Core.Network
             _interpActive = true;
         }
 
+        private float _interpYaw;
+        private bool _yawInterpActive;
+
+        private void HandleYawChanged(float oldYaw, float newYaw)
+        {
+            _interpYaw = newYaw;
+            _yawInterpActive = true;
+        }
+
         private void Update()
         {
-            if (!_interpActive || IsServer) return;
-            transform.position = Vector3.Lerp(transform.position, _interpTarget, Time.deltaTime * InterpSpeed);
+            if (IsServer) return;
+            if (_interpActive)
+                transform.position = Vector3.Lerp(transform.position, _interpTarget, Time.deltaTime * InterpSpeed);
+            if (_yawInterpActive)
+            {
+                float current = transform.eulerAngles.y;
+                float lerped = Mathf.LerpAngle(current, _interpYaw, Time.deltaTime * InterpSpeed);
+                transform.rotation = Quaternion.Euler(0f, lerped, 0f);
+            }
         }
 
         // X4-3 initialize StatManager authority and prime HP/alive NVs.
@@ -244,21 +318,27 @@ namespace ArenaCombat.Core.Network
             _statMgr.SetPhaseDamageScale(1f);
             networkCurrentPhase.Value = BossPhase.Phase1;
             PopulateBossSkills(BossPhase.Phase1);
+            Debug.Log($"[BNC3D] InitializeStatManager OK - id={NetworkObjectId}, HP={networkHP.Value}, alive={networkIsAlive.Value}, phase={networkCurrentPhase.Value}", this);
             return true;
         }
 
-        // X4-3 server-side StatManager → HP/alive NV sync (PNC3D X3-3 pattern).
-        // Codex X4-4 S-2: networkPosition is NOT synced here — ApplyPositionOffset
-        // already mirrors it immediately on each position write, and the boss has
-        // no FSM movement yet, so per-tick position sync adds no value.
         private void FixedUpdate()
         {
             if (!IsServer || !IsSpawned || _statMgr == null || !networkIsAlive.Value)
                 return;
 
+            _statMgr.Tick(Time.fixedDeltaTime);
+
             float statHP = _statMgr.GetHP();
             if (!Mathf.Approximately(networkHP.Value, statHP))
                 networkHP.Value = statHP;
+
+            Vector3 pos = transform.position;
+            if ((pos - networkPosition.Value).sqrMagnitude > 0.0001f)
+                networkPosition.Value = pos;
+            float yaw = transform.eulerAngles.y;
+            if (!Mathf.Approximately(networkYaw.Value, yaw))
+                networkYaw.Value = yaw;
 
             HandlePhase();  // X4-6 — phase tracking based on HP% (must run before defeat check
                             //        so OnBossDefeated can overwrite phase to Defeated).
@@ -450,7 +530,7 @@ namespace ArenaCombat.Core.Network
             _skillMgr.UseAdaptiveWeights = (BossAdaptiveWeights.Instance != null);
 
             string label = string.IsNullOrEmpty(def.variantName) ? def.name : def.variantName;
-            Debug.Log($"[BossAI] Variant applied: {label} ({def.playerType1}+{def.playerType2})", this);
+            Debug.Log($"[BossAI] Variant applied: {label} (pair={def.playerType1}+{def.playerType2})", this);
         }
 
         // Re-apply variant skill slots + weights only, preserving phase-controlled
@@ -523,11 +603,107 @@ namespace ArenaCombat.Core.Network
                 _telegraphDisplay.Show(position, direction, duration, (TargetType)targetType);
         }
 
-        // X4-3 boss death — local handling only. Match-end broadcast lands with
-        // BossManager + GSM wiring in a later round (X4-5/6).
+        private void HandleTelegraphCancelled()
+        {
+            if (!IsServer || !IsSpawned) return;
+            TelegraphCancelledRpc();
+        }
+
+        [Rpc(SendTo.ClientsAndHost)]
+        private void TelegraphCancelledRpc()
+        {
+            if (_telegraphDisplay != null)
+                _telegraphDisplay.Hide();
+        }
+
+        public void AddStatus(StatusMask status)
+        {
+            if (!IsServer) return;
+            networkStatusMask.Value = StatusHelper.AddStatus(networkStatusMask.Value, status);
+        }
+
+        public void RemoveStatus(StatusMask status)
+        {
+            if (!IsServer) return;
+            networkStatusMask.Value = StatusHelper.RemoveStatus(networkStatusMask.Value, status);
+        }
+
+        private void HandleStatManagerStatusApplied(StatusType type, float duration)
+        {
+            if (!IsServer) return;
+            StatusMask mask = StatusHelper.StatusTypeToMask(type);
+            if (mask == StatusMask.None) return;
+            AddStatus(mask);
+        }
+
+        private void HandleStatManagerStatusRemoved(StatusType type)
+        {
+            if (!IsServer) return;
+            StatusMask mask = StatusHelper.StatusTypeToMask(type);
+            if (mask == StatusMask.None) return;
+
+            if (mask == StatusMask.Stunned)
+            {
+                bool otherStunActive = (type == StatusType.Stunned && _statMgr.HasStatus(StatusType.HitStun))
+                                    || (type == StatusType.HitStun && _statMgr.HasStatus(StatusType.Stunned));
+                if (otherStunActive) return;
+            }
+
+            RemoveStatus(mask);
+        }
+
+        private void HandleStatManagerStatusBulkCleared()
+        {
+            if (!IsServer) return;
+            networkStatusMask.Value = StatusMask.None;
+        }
+
+        private void HandleBuffApplied(BuffType type, float duration)
+        {
+            if (!IsServer) return;
+            BuffMask mask = StatusHelper.BuffTypeToMask(type);
+            if (mask != BuffMask.None)
+                networkBuffMask.Value |= mask;
+        }
+
+        private void HandleBuffRemoved(BuffType type)
+        {
+            if (!IsServer) return;
+            BuffMask mask = StatusHelper.BuffTypeToMask(type);
+            if (mask != BuffMask.None)
+                networkBuffMask.Value &= ~mask;
+        }
+
+        private void HandleDebuffApplied(DebuffType type, float duration)
+        {
+            if (!IsServer) return;
+            DebuffMask mask = StatusHelper.DebuffTypeToMask(type);
+            if (mask != DebuffMask.None)
+                networkDebuffMask.Value |= mask;
+        }
+
+        private void HandleDebuffRemoved(DebuffType type)
+        {
+            if (!IsServer) return;
+            DebuffMask mask = StatusHelper.DebuffTypeToMask(type);
+            if (mask != DebuffMask.None)
+                networkDebuffMask.Value &= ~mask;
+        }
+
+        private void HandleBuffDebuffBulkCleared()
+        {
+            if (!IsServer) return;
+            networkBuffMask.Value = BuffMask.None;
+            networkDebuffMask.Value = DebuffMask.None;
+        }
+
         private void OnBossDefeated(ulong attackerId)
         {
             networkIsAlive.Value = false;
+            if (_statMgr != null) _statMgr.ClearAllEffects();
+            networkStatusMask.Value = StatusMask.None;
+            networkBuffMask.Value = BuffMask.None;
+            networkDebuffMask.Value = DebuffMask.None;
             networkCurrentPhase.Value = BossPhase.Defeated;
             if (_skillMgr != null) _skillMgr.CancelTelegraph();
             Debug.Log($"[BossNetworkController3D] Boss defeated by clientId={attackerId}.", this);
@@ -573,7 +749,11 @@ namespace ArenaCombat.Core.Network
 
         void ICombatant.TakeDamage(float amount, ICombatant attacker)
         {
-            if (!IsServer || _statMgr == null || !networkIsAlive.Value) return;
+            if (!IsServer || _statMgr == null || !networkIsAlive.Value)
+            {
+                Debug.LogWarning($"[BNC3D:TakeDamage] REJECTED: IsServer={IsServer}, statMgr={(_statMgr != null)}, alive={networkIsAlive.Value}, amount={amount}");
+                return;
+            }
             _lastAttackerId = attacker is PlayerNetworkController3D pnc
                 ? pnc.OwnerClientId
                 : 0UL;

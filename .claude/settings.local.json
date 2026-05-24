@@ -34,7 +34,15 @@
       "mcp__mcp-unity__load_scene",
       "mcp__codex__*",
       "mcp__mcp-unity__send_console_log",
-      "mcp__mcp-unity__create_prefab"
+      "mcp__mcp-unity__create_prefab",
+      "mcp__firebase__firebase_list_projects",
+      "mcp__firebase__firebase_get_project",
+      "mcp__firebase__firebase_read_resources",
+      "mcp__firebase__firebase_update_environment",
+      "mcp__firebase__firebase_list_apps",
+      "mcp__firebase__firebase_get_sdk_config",
+      "mcp__firebase__firebase_get_security_rules",
+      "mcp__mcp-unity__set_transform"
     ],
     "deny": [
       "mcp__mcp-unity__recompile_scripts"

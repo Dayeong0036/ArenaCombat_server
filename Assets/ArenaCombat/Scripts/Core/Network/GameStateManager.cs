@@ -89,6 +89,7 @@ namespace ArenaCombat.Core.Network
 
         public event Action<int, float> OnCardDraftStarted;
         public event Action<int> OnCardDraftEnded;
+        public event Action<int> OnCardDraftEndedServer;
         public event Action<float> OnCardDraftTimerUpdated;
         public event Action<ulong, int, int> OnCardSelectionResolved;
         public event Action<int, int, string> OnCardSelectionRejected;
@@ -467,7 +468,7 @@ namespace ArenaCombat.Core.Network
             TransitionToState(MatchState.MatchEnd);
         }
 
-        [Rpc(SendTo.Server, RequireOwnership = false)]
+        [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
         public void RequestRestartRpc(RpcParams rpcParams = default)
         {
             if (!IsServer) return;
@@ -544,7 +545,7 @@ namespace ArenaCombat.Core.Network
             Debug.Log("[GameStateManager] Match ended!");
         }
 
-        [Rpc(SendTo.Server, RequireOwnership = false)]
+        [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
         public void RequestStartMatchRpc(RpcParams rpcParams = default)
         {
             ulong clientId = rpcParams.Receive.SenderClientId;
@@ -615,7 +616,7 @@ namespace ArenaCombat.Core.Network
             }
         }
 
-        [Rpc(SendTo.Server, RequireOwnership = false)]
+        [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
         public void RequestPauseRpc(RpcParams rpcParams = default)
         {
             ulong clientId = rpcParams.Receive.SenderClientId;
@@ -786,7 +787,7 @@ namespace ArenaCombat.Core.Network
             OnCardSelectionRejected?.Invoke(round, requestedCardIndex, reason);
         }
 
-        [Rpc(SendTo.Server, RequireOwnership = false)]
+        [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
         private void SubmitCardSelectionRpc(int round, int cardIndex, RpcParams rpcParams = default)
         {
             if (!IsServer)
@@ -944,6 +945,7 @@ namespace ArenaCombat.Core.Network
 
             if (wasActive)
             {
+                OnCardDraftEndedServer?.Invoke(round);
                 CardDraftEndedRpc(round);
                 if (emitCardDraftDebugLogs)
                 {

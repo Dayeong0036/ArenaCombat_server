@@ -114,6 +114,16 @@ namespace ArenaCombat.Core.AI
         public PlayerArchetype GetArchetype(ulong clientId)
             => _data.TryGetValue(clientId, out var d) ? d.current : PlayerArchetype.Hybrid;
 
+        public void ResetAllWeights()
+        {
+            foreach (var kvp in _data)
+            {
+                var d = kvp.Value;
+                d.weights[0] = d.weights[1] = d.weights[2] = 0f;
+                d.current = PlayerArchetype.Hybrid;
+            }
+        }
+
         public bool TryGetWeights(ulong clientId, out float melee, out float ranged, out float cc)
         {
             if (_data.TryGetValue(clientId, out var d))

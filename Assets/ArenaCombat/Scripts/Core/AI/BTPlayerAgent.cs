@@ -13,7 +13,9 @@ namespace ArenaCombat.Core.AI
         [Header("Personality")]
         [SerializeField, Range(0f, 1f)] float _meleeAggression = 0.5f;
         [SerializeField, Range(0f, 1f)] float _parryTendency = 0.3f;
+#pragma warning disable CS0414
         [SerializeField, Range(0f, 1f)] float _survivalCaution = 0.3f;
+#pragma warning restore CS0414
         [SerializeField] float _meleeRange = 3f;
         [SerializeField] float _fleeHPThreshold = 0.3f;
 

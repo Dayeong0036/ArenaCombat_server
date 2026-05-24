@@ -5,25 +5,22 @@ using ArenaCombat.Core.Network;
 
 namespace ArenaCombat.Core.AI
 {
-    // Server-only singleton. Selects and applies BossAIDefinition variants based on
-    // PlayerArchetypeClassifier output. See foamy-baking-melody.md (C3a plan) for design.
-    //
-    // Phase transition: subscribes to BNC3D.OnPhaseSkillsPopulated and re-applies
-    // current variant slots immediately after PopulateBossSkills clobbers them.
     [DisallowMultipleComponent]
     public class BossAIPoolManager : MonoBehaviour
     {
         public static BossAIPoolManager Instance { get; private set; }
-        public const int ComboCount = 10;
 
-        [Header("Variant Pool")]
+        [Header("Pair Pool (10 combos)")]
         [SerializeField] private BossAIDefinition _defaultAI;
-        [SerializeField] private BossAIDefinition[] _combos = new BossAIDefinition[ComboCount];
+        [SerializeField] private BossAIDefinition[] _combos = new BossAIDefinition[10];
 
         [Header("Debug")]
         [SerializeField] private bool _verboseLog = true;
+        [SerializeField] private string _debugCurrentVariant;
+        [SerializeField] private string _debugPairKey;
+        [SerializeField] private string _debugPending;
 
-        private readonly Dictionary<(PlayerArchetype, PlayerArchetype), BossAIDefinition> _lookup = new();
+        private Dictionary<(PlayerArchetype, PlayerArchetype), BossAIDefinition> _pairPool;
         private BossAIDefinition _currentDef;
         private BossAIDefinition _pendingDef;
         private BossNetworkController3D _bossController;
@@ -38,13 +35,13 @@ namespace ArenaCombat.Core.AI
         {
             if (Instance == null) Instance = this;
             else { Destroy(this); return; }
-            BuildLookup();
+            BuildPairPool();
         }
 
         void OnValidate()
         {
-            if (_combos == null || _combos.Length != ComboCount)
-                System.Array.Resize(ref _combos, ComboCount);
+            if (_combos == null || _combos.Length != 10)
+                System.Array.Resize(ref _combos, 10);
         }
 
         void OnEnable()
@@ -65,43 +62,40 @@ namespace ArenaCombat.Core.AI
 
         void Update()
         {
-            // Update-poll retry pattern (mirrors BossManager.cs:38-54). Handles scene
-            // load order where dependencies may come up after this manager.
             if (_subscribedGSM == null || _subscribedClassifier == null)
                 TrySubscribe();
 
-            // Boss-available retry: when InProgress fires before BossManager spawns,
-            // EvaluateAndSwap sets _needsEvaluate; retry each frame until applied.
             if (_needsEvaluate && IsServer)
                 EvaluateAndSwap();
         }
 
-        void BuildLookup()
+        void BuildPairPool()
         {
-            _lookup.Clear();
-            for (int i = 0; i < _combos.Length; i++)
+            _pairPool = new Dictionary<(PlayerArchetype, PlayerArchetype), BossAIDefinition>();
+            if (_combos == null) return;
+
+            foreach (var def in _combos)
             {
-                var def = _combos[i];
                 if (def == null) continue;
                 if (def.isDefault)
                 {
-                    Debug.LogWarning($"[BossAIPool] Combo slot {i} ({def.name}) is flagged isDefault — assign to _defaultAI, not _combos[].", this);
+                    Debug.LogWarning($"[BossAIPool] {def.name} is flagged isDefault — assign to _defaultAI, not _combos[].", this);
                     continue;
                 }
-                var key = Norm(def.playerType1, def.playerType2);
-                if (_lookup.ContainsKey(key))
+                var key = def.PairKey;
+                if (_pairPool.ContainsKey(key))
                 {
-                    Debug.LogWarning($"[BossAIPool] Duplicate combo {key} — keeping first, ignoring {def.name}.", this);
+                    Debug.LogWarning($"[BossAIPool] Duplicate pair ({key.Item1},{key.Item2}) — keeping first, ignoring {def.name}.", this);
                     continue;
                 }
-                _lookup[key] = def;
+                _pairPool[key] = def;
             }
-            if (_defaultAI == null)
-                Debug.LogWarning("[BossAIPool] _defaultAI is null — cold-start and lookup-miss fallback will be null.", this);
-        }
 
-        static (PlayerArchetype, PlayerArchetype) Norm(PlayerArchetype a, PlayerArchetype b)
-            => (byte)a <= (byte)b ? (a, b) : (b, a);
+            if (_defaultAI == null)
+                Debug.LogWarning("[BossAIPool] _defaultAI is null — cold-start fallback will be null.", this);
+            if (_pairPool.Count < 10)
+                Debug.LogWarning($"[BossAIPool] Only {_pairPool.Count}/10 pairs wired.", this);
+        }
 
         static bool IsServer => NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer;
 
@@ -112,12 +106,12 @@ namespace ArenaCombat.Core.AI
                 _subscribedGSM = GameStateManager.Instance;
                 _subscribedGSM.OnMatchStateChanged += HandleMatchStateChanged;
                 if (IsServer && _subscribedGSM.CurrentMatchState == MatchState.InProgress)
-                    _needsEvaluate = true;  // catch up if we hooked late
+                    _needsEvaluate = true;
             }
             if (_subscribedClassifier == null && PlayerArchetypeClassifier.Instance != null)
             {
                 _subscribedClassifier = PlayerArchetypeClassifier.Instance;
-                _subscribedClassifier.OnPlayerArchetypeChanged += HandleArchetypeChanged;
+                _subscribedClassifier.OnPlayerArchetypeChanged += HandlePlayerArchetypeChanged;
             }
         }
 
@@ -130,7 +124,7 @@ namespace ArenaCombat.Core.AI
             }
             if (_subscribedClassifier != null)
             {
-                _subscribedClassifier.OnPlayerArchetypeChanged -= HandleArchetypeChanged;
+                _subscribedClassifier.OnPlayerArchetypeChanged -= HandlePlayerArchetypeChanged;
                 _subscribedClassifier = null;
             }
             UnsubscribeBoss();
@@ -161,7 +155,7 @@ namespace ArenaCombat.Core.AI
             }
         }
 
-        void HandleArchetypeChanged(ulong clientId, PlayerArchetype oldType, PlayerArchetype newType)
+        void HandlePlayerArchetypeChanged(ulong clientId, PlayerArchetype oldType, PlayerArchetype newType)
         {
             if (!IsServer) return;
             EvaluateAndSwap();
@@ -173,11 +167,13 @@ namespace ArenaCombat.Core.AI
             _currentDef = null;
             _pendingDef = null;
             _needsEvaluate = false;
+            _debugCurrentVariant = "";
+            _debugPairKey = "";
+            _debugPending = "";
         }
 
         BossNetworkController3D ResolveBossController()
         {
-            // Validate cache against authoritative BossManager.CurrentBoss every call.
             if (BossManager.Instance == null) return null;
             var nob = BossManager.Instance.CurrentBoss;
             if (nob == null)
@@ -196,28 +192,37 @@ namespace ArenaCombat.Core.AI
             return _bossController;
         }
 
-        (PlayerArchetype, PlayerArchetype) GetCurrentArchetypePair()
+        bool ResolvePairKey(out (PlayerArchetype, PlayerArchetype) pairKey)
         {
+            pairKey = (PlayerArchetype.Hybrid, PlayerArchetype.Hybrid);
+
             var classifier = PlayerArchetypeClassifier.Instance;
             var nm = NetworkManager.Singleton;
             if (classifier == null || nm == null)
-                return (PlayerArchetype.Hybrid, PlayerArchetype.Hybrid);
+                return false;
 
-            var ids = new List<ulong>();
-            foreach (var c in nm.ConnectedClientsList) ids.Add(c.ClientId);
-            ids.Sort();
+            PlayerArchetype a1 = PlayerArchetype.Hybrid;
+            PlayerArchetype a2 = PlayerArchetype.Hybrid;
+            int playerCount = 0;
 
-            if (ids.Count == 0) return (PlayerArchetype.Hybrid, PlayerArchetype.Hybrid);
-            var a1 = classifier.GetArchetype(ids[0]);
-            var a2 = ids.Count >= 2 ? classifier.GetArchetype(ids[1]) : a1;
-            return (a1, a2);
-        }
+            foreach (var client in nm.ConnectedClientsList)
+            {
+                if (client.PlayerObject == null) continue;
+                var arch = classifier.GetArchetype(client.ClientId);
+                if (playerCount == 0) a1 = arch;
+                else if (playerCount == 1) a2 = arch;
+                playerCount++;
+                if (playerCount >= 2) break;
+            }
 
-        BossAIDefinition ResolveVariant(PlayerArchetype a, PlayerArchetype b)
-        {
-            var key = Norm(a, b);
-            if (_lookup.TryGetValue(key, out var def) && def != null) return def;
-            return _defaultAI;
+            if (playerCount == 0)
+                return false;
+
+            if (playerCount == 1)
+                a2 = a1;
+
+            pairKey = a1 <= a2 ? (a1, a2) : (a2, a1);
+            return true;
         }
 
         public void EvaluateAndSwap()
@@ -233,24 +238,18 @@ namespace ArenaCombat.Core.AI
             var boss = ResolveBossController();
             if (boss == null)
             {
-                // Boss not yet spawned; retry next frame.
                 _needsEvaluate = true;
                 return;
             }
 
-            // Cold start: first apply uses dedicated Default AI explicitly, not lookup
-            // (so HH variant can differ from "no data yet" variant if designer assigns
-            // both). Subsequent calls fall through to normal lookup.
-            BossAIDefinition def;
-            if (_currentDef == null && _defaultAI != null)
+            BossAIDefinition def = null;
+
+            if (ResolvePairKey(out var pairKey))
             {
-                def = _defaultAI;
+                if (_pairPool.TryGetValue(pairKey, out var found))
+                    def = found;
             }
-            else
-            {
-                var (p1, p2) = GetCurrentArchetypePair();
-                def = ResolveVariant(p1, p2);
-            }
+            def ??= _defaultAI;
 
             if (def == null)
             {
@@ -258,9 +257,6 @@ namespace ArenaCombat.Core.AI
                 return;
             }
 
-            // If the resolved variant matches what we already applied, cancel any
-            // stale pending entry (covers the case where pending=B but classifier
-            // flipped back to current=A before idle fired).
             if (def == _currentDef)
             {
                 if (_pendingDef != null && boss != null)
@@ -279,53 +275,35 @@ namespace ArenaCombat.Core.AI
                 boss.OnIdleAfterAction -= ApplyPending;
                 boss.OnIdleAfterAction += ApplyPending;
                 _needsEvaluate = false;
+                _debugPending = def.name;
                 if (_verboseLog) Debug.Log($"[BossAI] swap deferred → {def.name} (boss busy)", this);
                 return;
             }
 
+            ApplyVariant(boss, def, pairKey);
+        }
+
+        void ApplyVariant(BossNetworkController3D boss, BossAIDefinition def, (PlayerArchetype, PlayerArchetype) pairKey)
+        {
             boss.ApplyAIVariant(def);
             _currentDef = def;
             _pendingDef = null;
             _needsEvaluate = false;
-            if (_verboseLog) Debug.Log($"[BossAI] swap applied: {def.name}", this);
+            _debugCurrentVariant = def.name;
+            _debugPairKey = $"{pairKey.Item1}+{pairKey.Item2}";
+            _debugPending = "";
+            if (_verboseLog) Debug.Log($"[BossAI] swap applied: {def.name} (pair={pairKey.Item1}+{pairKey.Item2})", this);
         }
 
         void ApplyPending()
         {
-            // Unsubscribe immediately — one-shot semantics.
             if (_bossController != null)
                 _bossController.OnIdleAfterAction -= ApplyPending;
 
             if (!IsServer) { _pendingDef = null; return; }
-            if (_pendingDef == null) return;
 
-            var def = _pendingDef;
             _pendingDef = null;
-
-            var boss = ResolveBossController();
-            if (boss == null || !boss.IsSpawned)
-            {
-                // Boss despawned between defer and idle event — requeue.
-                _pendingDef = def;
-                _needsEvaluate = true;
-                return;
-            }
-            if (def == _currentDef) return;
-
-            // Defensive re-check: another telegraph may have started between idle
-            // event and this dispatch (rare but possible). Requeue if busy.
-            if (boss.IsBusy)
-            {
-                _pendingDef = def;
-                boss.OnIdleAfterAction -= ApplyPending;
-                boss.OnIdleAfterAction += ApplyPending;
-                if (_verboseLog) Debug.Log($"[BossAI] re-defer {def.name} (boss became busy again)", this);
-                return;
-            }
-
-            boss.ApplyAIVariant(def);
-            _currentDef = def;
-            if (_verboseLog) Debug.Log($"[BossAI] deferred swap applied: {def.name}", this);
+            EvaluateAndSwap();
         }
 
         void HandlePhaseSkillsPopulated()

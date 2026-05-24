@@ -139,7 +139,6 @@ namespace ArenaCombat.Core.Card
 
         private void HandleSelectionResolved(ulong playerId, int slotIndex, int cardIndex)
         {
-            // Server-validated. Apply to local representation of that player.
             if (allCards == null || cardIndex < 0 || cardIndex >= allCards.Length || allCards[cardIndex] == null)
             {
                 Debug.LogWarning($"[CardManager] Resolved cardIndex {cardIndex} out of range / null in allCards");
@@ -147,15 +146,15 @@ namespace ArenaCombat.Core.Card
             }
 
             var card = allCards[cardIndex];
-            var skillMgr = FindSkillManagerForPlayer(playerId);
-            // BAL-1: history slot (0..3) → skill manager slot (1..4). Slot 0 reserved for initial loadout.
             int targetSlot = slotIndex + 1;
-            if (skillMgr != null && card.skillDefinition != null && targetSlot >= 0 && targetSlot < skillMgr.MaxSlots)
+
+            if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
             {
-                skillMgr.SetSlot(targetSlot, card.skillDefinition);
+                var pnc3d = FindPNC3DForPlayer(playerId);
+                if (pnc3d != null && card.skillDefinition != null)
+                    pnc3d.SetSkillSlotServer(targetSlot, card.skillDefinition);
             }
 
-            // UI persistent icon은 historyIndex(0..3) 그대로 사용 (4슬롯 카드 이력 표시 유지).
             ApplyPersistentSelectionIcon(playerId, slotIndex, card);
 
             if (NetworkManager.Singleton != null && playerId == NetworkManager.Singleton.LocalClientId)
@@ -248,6 +247,19 @@ namespace ArenaCombat.Core.Card
                 if (no == null || !no.IsPlayerObject) continue;
                 if (no.OwnerClientId != playerId) continue;
                 return no.GetComponent<SkillManager>();
+            }
+            return null;
+        }
+
+        private PlayerNetworkController3D FindPNC3DForPlayer(ulong playerId)
+        {
+            if (NetworkManager.Singleton == null || NetworkManager.Singleton.SpawnManager == null) return null;
+            foreach (var kv in NetworkManager.Singleton.SpawnManager.SpawnedObjects)
+            {
+                var no = kv.Value;
+                if (no == null || !no.IsPlayerObject) continue;
+                if (no.OwnerClientId != playerId) continue;
+                return no.GetComponent<PlayerNetworkController3D>();
             }
             return null;
         }

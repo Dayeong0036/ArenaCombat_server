@@ -1,4 +1,5 @@
 using Unity.Netcode;
+using Unity.MLAgents;
 using UnityEngine;
 using ArenaCombat.Core.AI;
 using ArenaCombat.Core.Skill;
@@ -134,6 +135,7 @@ namespace ArenaCombat.Core.Network
             Vector3 pos = _bossSpawnPoint != null ? _bossSpawnPoint.position : Vector3.zero;
             Quaternion rot = _bossSpawnPoint != null ? _bossSpawnPoint.rotation : Quaternion.identity;
 
+            EnsureAcademyWontBlock();
             var go = Instantiate(_bossPrefab, pos, rot);
             var netObj = go.GetComponent<NetworkObject>();
             if (netObj == null)
@@ -187,6 +189,32 @@ namespace ArenaCombat.Core.Network
 
             if (GameStateManager.Instance != null && GameStateManager.Instance.IsServer)
                 GameStateManager.Instance.EndMatch(MatchEndReason.BossDefeated);
+        }
+
+        private static void EnsureAcademyWontBlock()
+        {
+            if (Academy.IsInitialized) return;
+#if UNITY_EDITOR
+            try
+            {
+                var mgrType = System.Type.GetType("Unity.MLAgents.MLAgentsSettingsManager, Unity.ML-Agents");
+                if (mgrType == null) return;
+                var prop = mgrType.GetProperty("Settings", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                if (prop == null) return;
+                var settings = prop.GetValue(null);
+                if (settings == null) return;
+                var connectProp = settings.GetType().GetProperty("ConnectTrainer");
+                if (connectProp != null && (bool)connectProp.GetValue(settings))
+                {
+                    connectProp.SetValue(settings, false);
+                    Debug.LogWarning("[BossManager] ML-Agents ConnectTrainer was ON with no Python trainer — forced OFF to prevent gRPC freeze.");
+                }
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[BossManager] Failed to check ML-Agents ConnectTrainer: {e.Message}");
+            }
+#endif
         }
 
         private static bool IsServer()

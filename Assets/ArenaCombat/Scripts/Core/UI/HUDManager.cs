@@ -71,6 +71,7 @@ namespace ArenaCombat.Core.UI
             if (_uiResolved) return;
 
             var canvas = transform;
+            _player1HPFill = FindImageInChildren(canvas, "Player1_HPBg");
             _bossHPFill = FindImageInChildren(canvas, "Boss_HPBg");
             _bossNameLabel = FindTextInChildren(canvas, "Boss_NameLabel");
             _player2HPFill = FindImageInChildren(canvas, "Player2_HPBg");
@@ -161,7 +162,7 @@ namespace ArenaCombat.Core.UI
 
         private void RefreshReferences()
         {
-            if (_localPlayer != null && _boss != null && _localSkillMgr != null) return;
+            if (_localPlayer != null && _remotePlayer != null && _boss != null && _localSkillMgr != null) return;
 
             var players = FindObjectsByType<PlayerNetworkController3D>(FindObjectsSortMode.None);
             foreach (var p in players)

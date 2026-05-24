@@ -128,6 +128,7 @@ namespace ArenaCombat.Core.AI
                 d.teamDistanceSum = 0; d.teamDistanceSamples = 0;
                 for (int i = 0; i < d.biases.Length; i++) d.biases[i] = 0f;
             }
+            PlayerArchetypeClassifier.Instance?.ResetAllWeights();
         }
 
         public float[] GetBiases(ulong clientId)

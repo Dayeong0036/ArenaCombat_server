@@ -97,6 +97,18 @@ namespace ArenaCombat.Core.Stats
         private CombatantKind _kind;
         private ICombatant    _owner;
 
+        // ── status change events (for NV bridge) ────────────────────
+        public event System.Action<StatusType, float> OnStatusApplied;
+        public event System.Action<StatusType> OnStatusRemoved;
+        public event System.Action OnStatusBulkCleared;
+
+        // ── buff/debuff change events (for NV bridge) ───────────
+        public event System.Action<BuffType, float> OnBuffApplied;
+        public event System.Action<BuffType> OnBuffRemoved;
+        public event System.Action<DebuffType, float> OnDebuffApplied;
+        public event System.Action<DebuffType> OnDebuffRemoved;
+        public event System.Action OnBuffDebuffBulkCleared;
+
         // ── coroutine tracking ───────────────────────────────────────
         private readonly Dictionary<StatusType, Coroutine> _statusCoroutines = new();
         private readonly Dictionary<BuffType,   Coroutine> _buffCoroutines   = new();
@@ -178,8 +190,19 @@ namespace ArenaCombat.Core.Stats
             if (_hpRegenRate > 0f && _currentHP < _maxHP)
                 _currentHP = Mathf.Min(_maxHP, _currentHP + _hpRegenRate * dt);
 
-            RefreshDebugInspector();
+#if UNITY_EDITOR
+            _debugRefreshTimer -= dt;
+            if (_debugRefreshTimer <= 0f)
+            {
+                _debugRefreshTimer = 0.25f;
+                RefreshDebugInspector();
+            }
+#endif
         }
+
+#if UNITY_EDITOR
+        private float _debugRefreshTimer;
+#endif
 
         private void RefreshDebugInspector()
         {
@@ -198,17 +221,23 @@ namespace ArenaCombat.Core.Stats
             _debugHealingMult  = GetHealingMultiplier();
             _debugReflectRatio = GetReflectRatio();
 
-            var statuses = new List<string>();
-            foreach (var kv in _statusCoroutines) statuses.Add(kv.Key.ToString());
-            _debugActiveStatuses = statuses.ToArray();
+            int statusCount = _statusCoroutines.Count;
+            if (_debugActiveStatuses == null || _debugActiveStatuses.Length != statusCount)
+                _debugActiveStatuses = new string[statusCount];
+            int si = 0;
+            foreach (var kv in _statusCoroutines) _debugActiveStatuses[si++] = kv.Key.ToString();
 
-            var buffs = new List<string>();
-            foreach (var kv in _buffCoroutines) buffs.Add(kv.Key.ToString());
-            _debugActiveBuffs = buffs.ToArray();
+            int buffCount = _buffCoroutines.Count;
+            if (_debugActiveBuffs == null || _debugActiveBuffs.Length != buffCount)
+                _debugActiveBuffs = new string[buffCount];
+            int bi = 0;
+            foreach (var kv in _buffCoroutines) _debugActiveBuffs[bi++] = kv.Key.ToString();
 
-            var debuffs = new List<string>();
-            foreach (var kv in _debuffCoroutines) debuffs.Add(kv.Key.ToString());
-            _debugActiveDebuffs = debuffs.ToArray();
+            int debuffCount = _debuffCoroutines.Count;
+            if (_debugActiveDebuffs == null || _debugActiveDebuffs.Length != debuffCount)
+                _debugActiveDebuffs = new string[debuffCount];
+            int di = 0;
+            foreach (var kv in _debuffCoroutines) _debugActiveDebuffs[di++] = kv.Key.ToString();
         }
 
         // ══════════════════════════════════════════════════════
@@ -405,6 +434,7 @@ namespace ArenaCombat.Core.Stats
             if (_statusCoroutines.TryGetValue(type, out var existing) && existing != null)
                 StopCoroutine(existing);
             _statusCoroutines[type] = StartCoroutine(StatusRoutine(type, effective, value));
+            OnStatusApplied?.Invoke(type, effective);
         }
 
         public void RemoveStatuses(CleanseType type, int count)
@@ -428,6 +458,7 @@ namespace ArenaCombat.Core.Stats
             {
                 RevertStatus(key);
                 _statusCoroutines.Remove(key);
+                OnStatusRemoved?.Invoke(key);
             }
         }
 
@@ -461,6 +492,7 @@ namespace ArenaCombat.Core.Stats
             }
             RevertStatus(type);
             _statusCoroutines.Remove(type);
+            OnStatusRemoved?.Invoke(type);
         }
 
         private void ApplyStatusValue(StatusType type, float value)
@@ -519,6 +551,7 @@ namespace ArenaCombat.Core.Stats
             if (_buffCoroutines.TryGetValue(type, out var existing) && existing != null)
                 StopCoroutine(existing);
             _buffCoroutines[type] = StartCoroutine(BuffRoutine(type, duration, value));
+            OnBuffApplied?.Invoke(type, duration);
         }
 
         public void RemoveBuffs(DispelType type, int count)
@@ -542,6 +575,7 @@ namespace ArenaCombat.Core.Stats
             {
                 RevertBuff(key);
                 _buffCoroutines.Remove(key);
+                OnBuffRemoved?.Invoke(key);
             }
         }
 
@@ -551,6 +585,7 @@ namespace ArenaCombat.Core.Stats
             yield return new WaitForSeconds(duration);
             RevertBuff(type);
             _buffCoroutines.Remove(type);
+            OnBuffRemoved?.Invoke(type);
         }
 
         private void ApplyBuffValue(BuffType type, float value)
@@ -598,6 +633,7 @@ namespace ArenaCombat.Core.Stats
             if (_debuffCoroutines.TryGetValue(type, out var existing) && existing != null)
                 StopCoroutine(existing);
             _debuffCoroutines[type] = StartCoroutine(DebuffRoutine(type, effective, value));
+            OnDebuffApplied?.Invoke(type, effective);
         }
 
         private IEnumerator DebuffRoutine(DebuffType type, float duration, float value)
@@ -606,6 +642,7 @@ namespace ArenaCombat.Core.Stats
             yield return new WaitForSeconds(duration);
             RevertDebuff(type);
             _debuffCoroutines.Remove(type);
+            OnDebuffRemoved?.Invoke(type);
         }
 
         private void ApplyDebuffValue(DebuffType type, float value)
@@ -638,14 +675,15 @@ namespace ArenaCombat.Core.Stats
         }
 
         // ══════════════════════════════════════════════════════
-        // Full reset for ML training episodes / scene reload.
+        // Clear all timed effects (status/buff/debuff). Called on death/respawn.
         // ══════════════════════════════════════════════════════
 
-        public void ResetForTraining()
+        public void ClearAllEffects()
         {
             foreach (var kv in _statusCoroutines)
                 if (kv.Value != null) StopCoroutine(kv.Value);
             _statusCoroutines.Clear();
+            OnStatusBulkCleared?.Invoke();
 
             foreach (var kv in _buffCoroutines)
                 if (kv.Value != null) StopCoroutine(kv.Value);
@@ -654,6 +692,51 @@ namespace ArenaCombat.Core.Stats
             foreach (var kv in _debuffCoroutines)
                 if (kv.Value != null) StopCoroutine(kv.Value);
             _debuffCoroutines.Clear();
+            OnBuffDebuffBulkCleared?.Invoke();
+
+            if (_parryCoroutine != null)
+            {
+                StopCoroutine(_parryCoroutine);
+                _parryCoroutine = null;
+            }
+            _isParrying = false;
+
+            if (_baseStats != null && _runtimeStats != null)
+            {
+                _runtimeStats.MoveControlMultiplier    = _baseStats.MoveControlMultiplier;
+                _runtimeStats.DamageTakenMultiplier     = _baseStats.DamageTakenMultiplier;
+                _runtimeStats.ReflectRatio              = _baseStats.ReflectRatio;
+                _runtimeStats.HealingReceivedMultiplier = _baseStats.HealingReceivedMultiplier;
+                _runtimeStats.DamageUpMultiplier         = _baseStats.DamageUpMultiplier;
+                _runtimeStats.DefenseUpMultiplier        = _baseStats.DefenseUpMultiplier;
+                _runtimeStats.VulnerabilityBonus         = _baseStats.VulnerabilityBonus;
+            }
+
+            _parryWindow = _baseParryWindow;
+            _parryWait = _parryWindow > 0f ? new WaitForSeconds(_parryWindow) : null;
+        }
+
+        // ══════════════════════════════════════════════════════
+        // Full reset for ML training episodes / scene reload.
+        // ══════════════════════════════════════════════════════
+
+        public void ResetForTraining()
+        {
+            foreach (var kv in _statusCoroutines)
+            {
+                if (kv.Value != null) StopCoroutine(kv.Value);
+            }
+            _statusCoroutines.Clear();
+            OnStatusBulkCleared?.Invoke();
+
+            foreach (var kv in _buffCoroutines)
+                if (kv.Value != null) StopCoroutine(kv.Value);
+            _buffCoroutines.Clear();
+
+            foreach (var kv in _debuffCoroutines)
+                if (kv.Value != null) StopCoroutine(kv.Value);
+            _debuffCoroutines.Clear();
+            OnBuffDebuffBulkCleared?.Invoke();
 
             if (_parryCoroutine != null)
             {

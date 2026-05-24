@@ -8,8 +8,12 @@ namespace ArenaCombat.Core.AI
     {
         public string variantName;
 
+        [Header("Archetype Pair")]
         public PlayerArchetype playerType1 = PlayerArchetype.Hybrid;
         public PlayerArchetype playerType2 = PlayerArchetype.Hybrid;
+
+        public (PlayerArchetype, PlayerArchetype) PairKey =>
+            playerType1 <= playerType2 ? (playerType1, playerType2) : (playerType2, playerType1);
 
         public bool isDefault = false;
 

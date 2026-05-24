@@ -16,8 +16,8 @@ namespace ArenaCombat.Core
         public static MapBounds3D Instance { get; private set; }
 
         [Header("=== 3D Bounds ===")]
-        [SerializeField] private Vector3 minBounds = new Vector3(-50f, 0f, -50f);
-        [SerializeField] private Vector3 maxBounds = new Vector3(50f, 20f, 50f);
+        [SerializeField] private Vector3 minBounds = new Vector3(-75f, 0f, -75f);
+        [SerializeField] private Vector3 maxBounds = new Vector3(75f, 20f, 75f);
 
         [Header("=== Kill Zone ===")]
         [SerializeField] private float killZoneY = -10f;

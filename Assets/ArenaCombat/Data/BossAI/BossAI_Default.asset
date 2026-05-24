@@ -13,6 +13,8 @@ MonoBehaviour:
   m_Name: BossAI_Default
   m_EditorClassIdentifier:
   variantName: Default
+  teamArchetype: 0
+  variantIndex: 0
   playerType1: 0
   playerType2: 0
   isDefault: 1

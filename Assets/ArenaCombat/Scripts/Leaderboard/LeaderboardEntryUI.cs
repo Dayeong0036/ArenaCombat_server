@@ -1,23 +1,21 @@
-﻿using UnityEngine;
+using UnityEngine;
 using TMPro;
 
 public class LeaderboardEntryUI : MonoBehaviour
 {
+    [Header("출력 순서: rank / playerName / stage / skill / timestamp")]
     public TextMeshProUGUI rankText;
     public TextMeshProUGUI nameText;
     public TextMeshProUGUI stageText;
     public TextMeshProUGUI skillText;
-    public TextMeshProUGUI timeText; // ⭐ 새로 추가된 '클리어 시간' 텍스트 연결용
+    public TextMeshProUGUI timeText;
 
-    // 5개의 데이터를 모두 받아서 텍스트를 변경하는 함수
-    public void SetUI(int rank, string playerName, int stage, string skills, int clearTime)
+    public void SetUI(int rank, string playerName, int stage, string skill, string timestamp)
     {
-        rankText.text = rank.ToString();
-        nameText.text = playerName;
+        rankText.text  = rank.ToString();
+        nameText.text  = playerName;
         stageText.text = stage.ToString();
-        skillText.text = skills;
-
-        // 시간은 보기 좋게 "초"를 붙여줍니다 (예: 120 -> 120초)
-        timeText.text = clearTime.ToString() + "초";
+        skillText.text = skill;
+        timeText.text  = timestamp;
     }
 }

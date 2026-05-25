@@ -3,7 +3,7 @@
     "mcp-unity": {
       "command": "node",
       "args": [
-        "C:/Users/paek6/ArenaCombat6/Library/PackageCache/com.gamelovers.mcp-unity@d176a9d737cc/Server~/build/index.js"
+        "D:/ArenaCombat_server/Library/PackageCache/com.gamelovers.mcp-unity@d176a9d737cc/Server~/build/index.js"
       ]
     },
     "codex": {

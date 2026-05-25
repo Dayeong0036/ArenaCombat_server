@@ -1,0 +1,380 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
+  <defs>
+    <!-- 전체 배경 그라디언트 -->
+    <radialGradient id="bgGrad" cx="50%" cy="40%" r="70%">
+      <stop offset="0%" stop-color="#1a0a0f"/>
+      <stop offset="40%" stop-color="#0d0508"/>
+      <stop offset="100%" stop-color="#000000"/>
+    </radialGradient>
+
+    <!-- 중앙 핏빛 글로우 -->
+    <radialGradient id="centerGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#6b0000" stop-opacity="0.4"/>
+      <stop offset="60%" stop-color="#3a0000" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- 상단 적색 광원 -->
+    <radialGradient id="topRedGlow" cx="50%" cy="0%" r="50%">
+      <stop offset="0%" stop-color="#aa0000" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- 왼쪽 촛불 광원 -->
+    <radialGradient id="leftCandleGlow" cx="0%" cy="50%" r="40%">
+      <stop offset="0%" stop-color="#ff4400" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- 오른쪽 촛불 광원 -->
+    <radialGradient id="rightCandleGlow" cx="100%" cy="50%" r="40%">
+      <stop offset="0%" stop-color="#ff4400" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- 하단 안개 -->
+    <linearGradient id="fogGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0a0305" stop-opacity="0"/>
+      <stop offset="70%" stop-color="#0a0305" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.95"/>
+    </linearGradient>
+
+    <!-- 패널 프레임 그라디언트 -->
+    <linearGradient id="frameGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#4a0a0a"/>
+      <stop offset="50%" stop-color="#2a0505"/>
+      <stop offset="100%" stop-color="#1a0303"/>
+    </linearGradient>
+
+    <!-- 석재 타일 패턴 -->
+    <pattern id="stoneTile" x="0" y="0" width="120" height="120" patternUnits="userSpaceOnUse">
+      <rect width="120" height="120" fill="#0c0608"/>
+      <rect x="1" y="1" width="57" height="57" fill="#0f070a" rx="1"/>
+      <rect x="62" y="1" width="57" height="57" fill="#0d0608" rx="1"/>
+      <rect x="1" y="62" width="57" height="57" fill="#0e0709" rx="1"/>
+      <rect x="62" y="62" width="57" height="57" fill="#100709" rx="1"/>
+      <line x1="0" y1="0" x2="120" y2="0" stroke="#1a0a0e" stroke-width="0.5"/>
+      <line x1="0" y1="60" x2="120" y2="60" stroke="#1a0a0e" stroke-width="0.5"/>
+      <line x1="0" y1="0" x2="0" y2="120" stroke="#1a0a0e" stroke-width="0.5"/>
+      <line x1="60" y1="0" x2="60" y2="120" stroke="#1a0a0e" stroke-width="0.5"/>
+    </pattern>
+
+    <!-- 핏방울 필터 -->
+    <filter id="drip_blur">
+      <feGaussianBlur stdDeviation="1.5"/>
+    </filter>
+
+    <!-- 글로우 필터 -->
+    <filter id="glow_red">
+      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- 강한 글로우 -->
+    <filter id="strong_glow">
+      <feGaussianBlur stdDeviation="8" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- 눈빛 글로우 -->
+    <filter id="eye_glow">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- 텍스트 외곽선 -->
+    <filter id="text_glow">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- 클립 패스 -->
+    <clipPath id="mainClip">
+      <rect width="1920" height="1080"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#mainClip)">
+
+    <!-- ===== 기본 배경 ===== -->
+    <rect width="1920" height="1080" fill="url(#bgGrad)"/>
+    <rect width="1920" height="1080" fill="url(#stoneTile)" opacity="0.6"/>
+
+    <!-- ===== 광원 레이어 ===== -->
+    <rect width="1920" height="1080" fill="url(#topRedGlow)"/>
+    <rect width="1920" height="1080" fill="url(#leftCandleGlow)"/>
+    <rect width="1920" height="1080" fill="url(#rightCandleGlow)"/>
+    <rect width="1920" height="1080" fill="url(#centerGlow)"/>
+
+    <!-- ===== 고딕 아치 배경 장식 ===== -->
+    <!-- 중앙 대형 아치 실루엣 -->
+    <path d="M760,1080 L760,420 Q960,200 1160,420 L1160,1080 Z"
+          fill="#0a0406" stroke="#2a0808" stroke-width="2" opacity="0.9"/>
+    <path d="M790,1080 L790,430 Q960,240 1130,430 L1130,1080 Z"
+          fill="none" stroke="#3a0a0a" stroke-width="1.5" opacity="0.6"/>
+
+    <!-- 아치 내부 글로우 -->
+    <path d="M800,1080 L800,440 Q960,260 1120,440 L1120,1080 Z"
+          fill="#200505" opacity="0.3"/>
+
+    <!-- 좌측 기둥 -->
+    <rect x="100" y="0" width="80" height="1080" fill="#0a0305" opacity="0.8"/>
+    <rect x="100" y="0" width="4" height="1080" fill="#3a0a0e" opacity="0.6"/>
+    <rect x="176" y="0" width="4" height="1080" fill="#3a0a0e" opacity="0.6"/>
+    <!-- 기둥 장식 -->
+    <rect x="90" y="100" width="100" height="20" fill="#200608" rx="2"/>
+    <rect x="90" y="300" width="100" height="20" fill="#200608" rx="2"/>
+    <rect x="90" y="500" width="100" height="20" fill="#200608" rx="2"/>
+    <rect x="90" y="700" width="100" height="20" fill="#200608" rx="2"/>
+    <rect x="90" y="900" width="100" height="20" fill="#200608" rx="2"/>
+
+    <!-- 우측 기둥 -->
+    <rect x="1740" y="0" width="80" height="1080" fill="#0a0305" opacity="0.8"/>
+    <rect x="1740" y="0" width="4" height="1080" fill="#3a0a0e" opacity="0.6"/>
+    <rect x="1816" y="0" width="4" height="1080" fill="#3a0a0e" opacity="0.6"/>
+    <!-- 기둥 장식 -->
+    <rect x="1730" y="100" width="100" height="20" fill="#200608" rx="2"/>
+    <rect x="1730" y="300" width="100" height="20" fill="#200608" rx="2"/>
+    <rect x="1730" y="500" width="100" height="20" fill="#200608" rx="2"/>
+    <rect x="1730" y="700" width="100" height="20" fill="#200608" rx="2"/>
+    <rect x="1730" y="900" width="100" height="20" fill="#200608" rx="2"/>
+
+    <!-- ===== 상단 피 방울 장식 ===== -->
+    <!-- 드리핑 핏줄기 - 중앙 그룹 -->
+    <g filter="url(#drip_blur)" opacity="0.85">
+      <!-- 드립 1 -->
+      <rect x="400" y="0" width="3" height="180" fill="#8b0000" rx="1.5"/>
+      <ellipse cx="401.5" cy="182" rx="5" ry="12" fill="#8b0000"/>
+      <!-- 드립 2 -->
+      <rect x="450" y="0" width="2" height="120" fill="#6b0000" rx="1"/>
+      <ellipse cx="451" cy="122" rx="4" ry="9" fill="#6b0000"/>
+      <!-- 드립 3 -->
+      <rect x="520" y="0" width="3.5" height="220" fill="#9b0000" rx="1.5"/>
+      <ellipse cx="521.75" cy="222" rx="6" ry="14" fill="#9b0000"/>
+      <!-- 드립 4 -->
+      <rect x="600" y="0" width="2" height="90" fill="#700000" rx="1"/>
+      <ellipse cx="601" cy="92" rx="3.5" ry="7" fill="#700000"/>
+      <!-- 드립 5 -->
+      <rect x="680" y="0" width="4" height="260" fill="#aa0000" rx="2"/>
+      <ellipse cx="682" cy="263" rx="7" ry="16" fill="#aa0000"/>
+      <!-- 드립 6 -->
+      <rect x="750" y="0" width="2.5" height="150" fill="#7a0000" rx="1.25"/>
+      <ellipse cx="751.25" cy="152" rx="5" ry="11" fill="#7a0000"/>
+      <!-- 드립 7 (중앙) -->
+      <rect x="958" y="0" width="4" height="300" fill="#cc0000" rx="2"/>
+      <ellipse cx="960" cy="303" rx="8" ry="18" fill="#cc0000"/>
+      <!-- 드립 8 -->
+      <rect x="1020" y="0" width="3" height="200" fill="#8b0000" rx="1.5"/>
+      <ellipse cx="1021.5" cy="202" rx="6" ry="13" fill="#8b0000"/>
+      <!-- 드립 9 -->
+      <rect x="1100" y="0" width="2.5" height="140" fill="#750000" rx="1.25"/>
+      <ellipse cx="1101.25" cy="142" rx="4.5" ry="10" fill="#750000"/>
+      <!-- 드립 10 -->
+      <rect x="1180" y="0" width="4" height="240" fill="#9a0000" rx="2"/>
+      <ellipse cx="1182" cy="243" rx="7" ry="15" fill="#9a0000"/>
+      <!-- 드립 11 -->
+      <rect x="1270" y="0" width="2" height="110" fill="#680000" rx="1"/>
+      <ellipse cx="1271" cy="112" rx="3.5" ry="8" fill="#680000"/>
+      <!-- 드립 12 -->
+      <rect x="1350" y="0" width="3.5" height="190" fill="#8b0000" rx="1.75"/>
+      <ellipse cx="1351.75" cy="192" rx="6" ry="13" fill="#8b0000"/>
+      <!-- 드립 13 -->
+      <rect x="1440" y="0" width="3" height="280" fill="#aa0000" rx="1.5"/>
+      <ellipse cx="1441.5" cy="283" rx="6" ry="15" fill="#aa0000"/>
+      <!-- 드립 14 -->
+      <rect x="1520" y="0" width="2" height="100" fill="#720000" rx="1"/>
+      <ellipse cx="1521" cy="102" rx="3.5" ry="7.5" fill="#720000"/>
+    </g>
+
+    <!-- 상단 피 고임 -->
+    <rect x="0" y="0" width="1920" height="12" fill="#6b0000" opacity="0.7"/>
+    <rect x="0" y="0" width="1920" height="5" fill="#9b0000" opacity="0.5"/>
+    <path d="M0,8 Q240,20 480,6 Q720,18 960,5 Q1200,20 1440,7 Q1680,18 1920,8 L1920,0 L0,0 Z"
+          fill="#8b0000" opacity="0.6"/>
+
+    <!-- ===== 중앙 해골 문양 (배경 장식) ===== -->
+    <!-- 해골 실루엣 - 매우 희미하게 -->
+    <g opacity="0.06" transform="translate(960, 200)">
+      <ellipse cx="0" cy="0" rx="80" ry="70" fill="#cc0000"/>
+      <circle cx="-28" cy="-10" r="22" fill="#000000"/>
+      <circle cx="28" cy="-10" r="22" fill="#000000"/>
+      <rect x="-20" y="45" width="40" height="35" fill="#cc0000" rx="3"/>
+      <rect x="-18" y="52" width="10" height="25" fill="#000000" rx="2"/>
+      <rect x="-4" y="52" width="8" height="25" fill="#000000" rx="2"/>
+      <rect x="8" y="52" width="10" height="25" fill="#000000" rx="2"/>
+    </g>
+
+    <!-- ===== 고딕 룬 문양 (양쪽 기둥 장식) ===== -->
+    <!-- 왼쪽 룬들 -->
+    <g opacity="0.15" fill="none" stroke="#cc0000" stroke-width="1.5">
+      <polygon points="140,200 160,230 120,230" />
+      <circle cx="140" cy="215" r="25"/>
+      <line x1="140" y1="170" x2="140" y2="270"/>
+      <line x1="100" y1="215" x2="180" y2="215"/>
+
+      <polygon points="140,400 155,425 125,425" />
+      <circle cx="140" cy="412" r="20"/>
+
+      <polygon points="140,600 160,630 120,630" />
+      <circle cx="140" cy="615" r="25"/>
+      <line x1="140" y1="570" x2="140" y2="670"/>
+      <line x1="100" y1="615" x2="180" y2="615"/>
+
+      <polygon points="140,800 155,825 125,825" />
+      <circle cx="140" cy="812" r="20"/>
+    </g>
+
+    <!-- 오른쪽 룬들 -->
+    <g opacity="0.15" fill="none" stroke="#cc0000" stroke-width="1.5">
+      <polygon points="1780,200 1800,230 1760,230" />
+      <circle cx="1780" cy="215" r="25"/>
+      <line x1="1780" y1="170" x2="1780" y2="270"/>
+      <line x1="1740" y1="215" x2="1820" y2="215"/>
+
+      <polygon points="1780,400 1795,425 1765,425" />
+      <circle cx="1780" cy="412" r="20"/>
+
+      <polygon points="1780,600 1800,630 1760,630" />
+      <circle cx="1780" cy="615" r="25"/>
+      <line x1="1780" y1="570" x2="1780" y2="670"/>
+      <line x1="1740" y1="615" x2="1820" y2="615"/>
+
+      <polygon points="1780,800 1795,825 1765,825" />
+      <circle cx="1780" cy="812" r="20"/>
+    </g>
+
+    <!-- ===== 촛불 장식 (양쪽) ===== -->
+    <!-- 왼쪽 촛불 -->
+    <g transform="translate(250, 300)">
+      <rect x="-8" y="20" width="16" height="60" fill="#1a0a05" rx="2"/>
+      <rect x="-6" y="22" width="12" height="56" fill="#2a1208" rx="1"/>
+      <rect x="-2" y="15" width="4" height="12" fill="#3a2010" rx="1"/>
+      <!-- 불꽃 -->
+      <ellipse cx="0" cy="8" rx="6" ry="10" fill="#ff6600" opacity="0.9" filter="url(#glow_red)"/>
+      <ellipse cx="0" cy="5" rx="4" ry="8" fill="#ffaa00" opacity="0.8"/>
+      <ellipse cx="0" cy="3" rx="2" ry="5" fill="#ffffff" opacity="0.6"/>
+      <!-- 촛농 -->
+      <path d="M-8,25 Q-12,30 -10,35 L-8,35 Z" fill="#e8e0d0" opacity="0.7"/>
+      <path d="M8,28 Q12,33 10,38 L8,38 Z" fill="#e8e0d0" opacity="0.7"/>
+    </g>
+    <!-- 왼쪽 촛불 2 -->
+    <g transform="translate(220, 600)">
+      <rect x="-6" y="15" width="12" height="50" fill="#1a0a05" rx="2"/>
+      <rect x="-2" y="10" width="4" height="10" fill="#3a2010" rx="1"/>
+      <ellipse cx="0" cy="5" rx="5" ry="8" fill="#ff5500" opacity="0.85" filter="url(#glow_red)"/>
+      <ellipse cx="0" cy="3" rx="3" ry="6" fill="#ffaa00" opacity="0.8"/>
+      <ellipse cx="0" cy="1" rx="1.5" ry="4" fill="#ffffff" opacity="0.5"/>
+    </g>
+
+    <!-- 오른쪽 촛불 -->
+    <g transform="translate(1670, 300)">
+      <rect x="-8" y="20" width="16" height="60" fill="#1a0a05" rx="2"/>
+      <rect x="-6" y="22" width="12" height="56" fill="#2a1208" rx="1"/>
+      <rect x="-2" y="15" width="4" height="12" fill="#3a2010" rx="1"/>
+      <ellipse cx="0" cy="8" rx="6" ry="10" fill="#ff6600" opacity="0.9" filter="url(#glow_red)"/>
+      <ellipse cx="0" cy="5" rx="4" ry="8" fill="#ffaa00" opacity="0.8"/>
+      <ellipse cx="0" cy="3" rx="2" ry="5" fill="#ffffff" opacity="0.6"/>
+      <path d="M-8,25 Q-12,30 -10,35 L-8,35 Z" fill="#e8e0d0" opacity="0.7"/>
+      <path d="M8,28 Q12,33 10,38 L8,38 Z" fill="#e8e0d0" opacity="0.7"/>
+    </g>
+    <!-- 오른쪽 촛불 2 -->
+    <g transform="translate(1700, 600)">
+      <rect x="-6" y="15" width="12" height="50" fill="#1a0a05" rx="2"/>
+      <rect x="-2" y="10" width="4" height="10" fill="#3a2010" rx="1"/>
+      <ellipse cx="0" cy="5" rx="5" ry="8" fill="#ff5500" opacity="0.85" filter="url(#glow_red)"/>
+      <ellipse cx="0" cy="3" rx="3" ry="6" fill="#ffaa00" opacity="0.8"/>
+      <ellipse cx="0" cy="1" rx="1.5" ry="4" fill="#ffffff" opacity="0.5"/>
+    </g>
+
+    <!-- ===== 어둠 속 눈빛 (배경 오른쪽 위) ===== -->
+    <!-- 게임플레이 스크린샷의 보스 눈처럼 -->
+    <g filter="url(#eye_glow)" opacity="0.7" transform="translate(1620, 120)">
+      <ellipse cx="-15" cy="0" rx="12" ry="7" fill="#ff6600"/>
+      <ellipse cx="-15" cy="0" rx="7" ry="5" fill="#ff9900"/>
+      <ellipse cx="-15" cy="0" rx="3" ry="3.5" fill="#ffcc00"/>
+      <ellipse cx="15" cy="0" rx="12" ry="7" fill="#ff6600"/>
+      <ellipse cx="15" cy="0" rx="7" ry="5" fill="#ff9900"/>
+      <ellipse cx="15" cy="0" rx="3" ry="3.5" fill="#ffcc00"/>
+    </g>
+
+    <!-- 왼쪽 구석 눈빛 (희미) -->
+    <g filter="url(#eye_glow)" opacity="0.3" transform="translate(320, 800)">
+      <ellipse cx="-10" cy="0" rx="9" ry="5" fill="#cc4400"/>
+      <ellipse cx="-10" cy="0" rx="4" ry="3" fill="#ff6600"/>
+      <ellipse cx="10" cy="0" rx="9" ry="5" fill="#cc4400"/>
+      <ellipse cx="10" cy="0" rx="4" ry="3" fill="#ff6600"/>
+    </g>
+
+    <!-- ===== 바닥 균열 장식 ===== -->
+    <g opacity="0.35" fill="none" stroke="#3a0808" stroke-width="1.5">
+      <path d="M300,1020 L350,1000 L380,1040 L420,990 L460,1060"/>
+      <path d="M500,1050 L530,1020 L570,1070 L600,1030"/>
+      <path d="M1400,1010 L1450,990 L1480,1050 L1520,1000 L1560,1070"/>
+      <path d="M1600,1040 L1640,1010 L1670,1060"/>
+    </g>
+
+    <!-- 균열 핏빛 -->
+    <g opacity="0.2" fill="none" stroke="#8b0000" stroke-width="0.8">
+      <path d="M300,1020 L350,1000 L380,1040 L420,990 L460,1060"/>
+      <path d="M1400,1010 L1450,990 L1480,1050 L1520,1000 L1560,1070"/>
+    </g>
+
+    <!-- ===== 리더보드 패널 프레임 테두리 영역 힌트 ===== -->
+    <!-- 중앙 패널 영역 미묘한 강조 (실제 패널은 UI에서 그리지만 배경에 약한 글로우) -->
+    <rect x="310" y="120" width="1300" height="850"
+          fill="none" stroke="#3a0a0a" stroke-width="1" opacity="0.4" rx="4"/>
+    <rect x="312" y="122" width="1296" height="846"
+          fill="#0f0407" opacity="0.15" rx="3"/>
+
+    <!-- 상단 제목 영역 장식선 -->
+    <line x1="200" y1="90" x2="1720" y2="90" stroke="#5a0000" stroke-width="1" opacity="0.4"/>
+    <line x1="250" y1="95" x2="1670" y2="95" stroke="#8b0000" stroke-width="0.5" opacity="0.3"/>
+
+    <!-- 하단 장식선 -->
+    <line x1="200" y1="990" x2="1720" y2="990" stroke="#5a0000" stroke-width="1" opacity="0.4"/>
+
+    <!-- 장식용 다이아몬드 -->
+    <g filter="url(#glow_red)">
+      <polygon points="960,70 975,85 960,100 945,85" fill="none" stroke="#cc0000" stroke-width="1.5" opacity="0.7"/>
+      <polygon points="960,76 971,85 960,94 949,85" fill="#6b0000" opacity="0.6"/>
+    </g>
+    <!-- 양쪽 작은 다이아몬드 -->
+    <polygon points="400,85 410,92 400,99 390,92" fill="none" stroke="#8b0000" stroke-width="1" opacity="0.5"/>
+    <polygon points="1520,85 1530,92 1520,99 1510,92" fill="none" stroke="#8b0000" stroke-width="1" opacity="0.5"/>
+
+    <!-- ===== 안개 / 비네트 ===== -->
+    <rect width="1920" height="1080" fill="url(#fogGrad)"/>
+
+    <!-- 좌우 비네트 -->
+    <rect width="1920" height="1080"
+          fill="url(#leftCandleGlow)" opacity="0.3"/>
+
+    <!-- 가장자리 어두운 비네트 -->
+    <rect x="0" y="0" width="200" height="1080"
+          fill="url(#leftCandleGlow)" opacity="0"/>
+    <path d="M0,0 L200,0 L200,1080 L0,1080 Z"
+          fill="black" opacity="0.45"/>
+    <path d="M1720,0 L1920,0 L1920,1080 L1720,1080 Z"
+          fill="black" opacity="0.45"/>
+    <path d="M0,900 L1920,900 L1920,1080 L0,1080 Z"
+          fill="black" opacity="0.5"/>
+
+    <!-- 전체 약한 어두운 오버레이 -->
+    <rect width="1920" height="1080" fill="#000000" opacity="0.1"/>
+
+  </g>
+</svg>

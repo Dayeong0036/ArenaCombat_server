@@ -154,7 +154,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 1, y: 1}
-  m_AnchoredPosition: {x: 0, y: -0.00025781622}
+  m_AnchoredPosition: {x: 9, y: -0.00025781622}
   m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0, y: 1}
 --- !u!114 &23429117
@@ -424,7 +424,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 114, y: 131}
+  m_AnchoredPosition: {x: 96, y: 131}
   m_SizeDelta: {x: 179.5868, y: 50}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &246919707
@@ -447,7 +447,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: "|  \uC120\uD0DD\uD55C \uC2A4\uD0AC"
+  m_text: "\uC120\uD0DD\uD55C \uC2A4\uD0AC"
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 037cc81aec4c2a64092281222fdf33f2, type: 2}
   m_sharedMaterial: {fileID: 6116858908817768021, guid: 037cc81aec4c2a64092281222fdf33f2, type: 2}
@@ -474,8 +474,8 @@ MonoBehaviour:
   m_faceColor:
     serializedVersion: 2
     rgba: 4294967295
-  m_fontSize: 36
-  m_fontSizeBase: 36
+  m_fontSize: 24
+  m_fontSizeBase: 24
   m_fontWeight: 400
   m_enableAutoSizing: 0
   m_fontSizeMin: 18
@@ -513,7 +513,7 @@ MonoBehaviour:
   m_VertexBufferAutoSizeReduction: 0
   m_useMaxVisibleDescender: 1
   m_pageToDisplay: 1
-  m_margin: {x: 0, y: 0, z: -113.222046, w: 0}
+  m_margin: {x: 0, y: 0, z: -133.8424, w: 0}
   m_isUsingLegacyAnimationComponent: 0
   m_isVolumetricText: 0
   m_hasFontAssetChanged: 0
@@ -864,8 +864,8 @@ MonoBehaviour:
   m_faceColor:
     serializedVersion: 2
     rgba: 4294967295
-  m_fontSize: 36
-  m_fontSizeBase: 36
+  m_fontSize: 24
+  m_fontSizeBase: 24
   m_fontWeight: 400
   m_enableAutoSizing: 0
   m_fontSizeMin: 18
@@ -1078,7 +1078,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: -311, y: 131}
+  m_AnchoredPosition: {x: -296, y: 131}
   m_SizeDelta: {x: 200, y: 50}
   m_Pivot: {x: 0.50000006, y: 0.5}
 --- !u!114 &411109077
@@ -1101,7 +1101,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: "|    \uC0AC\uC6A9\uC790\uBA85"
+  m_text: "\uC0AC\uC6A9\uC790\uBA85"
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 037cc81aec4c2a64092281222fdf33f2, type: 2}
   m_sharedMaterial: {fileID: 6116858908817768021, guid: 037cc81aec4c2a64092281222fdf33f2, type: 2}
@@ -1128,8 +1128,8 @@ MonoBehaviour:
   m_faceColor:
     serializedVersion: 2
     rgba: 4294967295
-  m_fontSize: 36
-  m_fontSizeBase: 36
+  m_fontSize: 24
+  m_fontSizeBase: 24
   m_fontWeight: 400
   m_enableAutoSizing: 0
   m_fontSizeMin: 18
@@ -1547,8 +1547,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 2, y: -146.86911}
-  m_SizeDelta: {x: 1049, y: 493.7582}
+  m_AnchoredPosition: {x: 16, y: -36.81}
+  m_SizeDelta: {x: 1047, y: 333.38}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &758559439
 MonoBehaviour:
@@ -1563,13 +1563,13 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.ScrollRect
   m_Content: {fileID: 23429116}
-  m_Horizontal: 1
+  m_Horizontal: 0
   m_Vertical: 1
   m_MovementType: 1
   m_Elasticity: 0.1
   m_Inertia: 1
   m_DecelerationRate: 0.135
-  m_ScrollSensitivity: 1
+  m_ScrollSensitivity: 30
   m_Viewport: {fileID: 1154197690}
   m_HorizontalScrollbar: {fileID: 749199574}
   m_VerticalScrollbar: {fileID: 524964898}
@@ -1803,7 +1803,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: -111, y: 131}
+  m_AnchoredPosition: {x: -161, y: 131}
   m_SizeDelta: {x: 200, y: 50}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1300993626
@@ -1826,7 +1826,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: "  |   \uC2A4\uD14C\uC774\uC9C0"
+  m_text: "\uC2A4\uD14C\uC774\uC9C0"
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 037cc81aec4c2a64092281222fdf33f2, type: 2}
   m_sharedMaterial: {fileID: 6116858908817768021, guid: 037cc81aec4c2a64092281222fdf33f2, type: 2}
@@ -1853,8 +1853,8 @@ MonoBehaviour:
   m_faceColor:
     serializedVersion: 2
     rgba: 4294967295
-  m_fontSize: 36
-  m_fontSizeBase: 36
+  m_fontSize: 24
+  m_fontSizeBase: 24
   m_fontWeight: 400
   m_enableAutoSizing: 0
   m_fontSizeMin: 18
@@ -1892,7 +1892,7 @@ MonoBehaviour:
   m_VertexBufferAutoSizeReduction: 0
   m_useMaxVisibleDescender: 1
   m_pageToDisplay: 1
-  m_margin: {x: 0, y: 0, z: -74.45532, w: 0}
+  m_margin: {x: 0, y: 0, z: -50.93103, w: 0}
   m_isUsingLegacyAnimationComponent: 0
   m_isVolumetricText: 0
   m_hasFontAssetChanged: 0
@@ -1940,7 +1940,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 408, y: 131}
+  m_AnchoredPosition: {x: 456, y: 131}
   m_SizeDelta: {x: 200, y: 50}
   m_Pivot: {x: 0.5576303, y: 0.5}
 --- !u!114 &1315221706
@@ -1963,7 +1963,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: "|   \uD074\uB9AC\uC5B4 \uC2DC\uAC04"
+  m_text: "\uD074\uB9AC\uC5B4 \uC2DC\uAC04"
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 037cc81aec4c2a64092281222fdf33f2, type: 2}
   m_sharedMaterial: {fileID: 6116858908817768021, guid: 037cc81aec4c2a64092281222fdf33f2, type: 2}
@@ -1990,8 +1990,8 @@ MonoBehaviour:
   m_faceColor:
     serializedVersion: 2
     rgba: 4294967295
-  m_fontSize: 36
-  m_fontSizeBase: 36
+  m_fontSize: 24
+  m_fontSizeBase: 24
   m_fontWeight: 400
   m_enableAutoSizing: 0
   m_fontSizeMin: 18
@@ -2154,7 +2154,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::LeaderboardTester
   entryPrefab: {fileID: 3053729448638687588, guid: 8992d20088517db4baff1ef6e4212cfe, type: 3}
   contentArea: {fileID: 23429116}
-  firebaseManager: {fileID: 1366947574}
+  useTestData: 0
   inputRank: 1
   inputName: "\uD14C\uC2A4\uD130"
   inputStage: 5

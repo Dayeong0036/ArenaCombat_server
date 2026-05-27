@@ -16,6 +16,14 @@ public class LeaderboardEntryUI : MonoBehaviour
         nameText.text  = playerName;
         stageText.text = stage.ToString();
         skillText.text = skill;
-        timeText.text  = timestamp;
+        timeText.text  = FormatTimestamp(timestamp);
+    }
+
+    // "2026-05-25T12:00:00Z" → "2026-05-25 12:00"
+    static string FormatTimestamp(string ts)
+    {
+        if (string.IsNullOrEmpty(ts)) return "";
+        ts = ts.Replace("T", " ").Replace("Z", "");
+        return ts.Length > 16 ? ts.Substring(0, 16) : ts;
     }
 }

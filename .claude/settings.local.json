@@ -42,7 +42,8 @@
       "mcp__firebase__firebase_list_apps",
       "mcp__firebase__firebase_get_sdk_config",
       "mcp__firebase__firebase_get_security_rules",
-      "mcp__mcp-unity__set_transform"
+      "mcp__mcp-unity__set_transform",
+      "mcp__firebase__firestore_add_document"
     ],
     "deny": [
       "mcp__mcp-unity__recompile_scripts"

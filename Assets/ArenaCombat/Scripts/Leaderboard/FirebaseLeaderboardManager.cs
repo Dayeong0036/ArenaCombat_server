@@ -15,10 +15,14 @@ public class FirebaseLeaderboardManager : MonoBehaviour
     public GameObject entryPrefab;
     public Transform contentArea;
 
-    void Start() => StartCoroutine(LoadLeaderboard());
+    bool isLoading = false;
+
+    // Start() 없음 — 로딩은 LeaderboardTester가 담당, 이 클래스는 SaveEntry 전용
 
     public IEnumerator LoadLeaderboard()
     {
+        if (isLoading) yield break;
+        isLoading = true;
         ClearEntries();
 
         string url = $"{BaseUrl}?key={ApiKey}&pageSize=20";
@@ -28,6 +32,7 @@ public class FirebaseLeaderboardManager : MonoBehaviour
         if (req.result != UnityWebRequest.Result.Success)
         {
             Debug.LogError($"[Firebase] 리더보드 로드 실패: {req.error}");
+            isLoading = false;
             yield break;
         }
 
@@ -35,18 +40,30 @@ public class FirebaseLeaderboardManager : MonoBehaviour
         if (response?.documents == null || response.documents.Length == 0)
         {
             Debug.Log("[Firebase] 리더보드 데이터 없음");
+            isLoading = false;
             yield break;
         }
 
         var docs = new List<FirestoreDocument>(response.documents);
+        // 스테이지 높은 순 → 클리어 시간 짧은 순
         docs.Sort((a, b) =>
-            int.Parse(a.fields.rank.integerValue)
-            .CompareTo(int.Parse(b.fields.rank.integerValue)));
+        {
+            int stageA = int.Parse(a.fields.stage.integerValue);
+            int stageB = int.Parse(b.fields.stage.integerValue);
+            if (stageB != stageA) return stageB.CompareTo(stageA);
+
+            double timeA = double.TryParse(a.fields.clearTime?.doubleValue,
+                System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out double ta) ? ta : double.MaxValue;
+            double timeB = double.TryParse(b.fields.clearTime?.doubleValue,
+                System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out double tb) ? tb : double.MaxValue;
+            return timeA.CompareTo(timeB);
+        });
 
         for (int i = 0; i < docs.Count; i++)
         {
             var f = docs[i].fields;
-            int rank = int.Parse(f.rank.integerValue);
             int stage = int.Parse(f.stage.integerValue);
 
             var skillValues = f.skill?.arrayValue?.values ?? new FirestoreStringVal[0];
@@ -55,13 +72,14 @@ public class FirebaseLeaderboardManager : MonoBehaviour
             string timestamp = f.timestamp?.timestampValue ?? "";
 
             var go = Instantiate(entryPrefab, contentArea);
-            go.GetComponent<LeaderboardEntryUI>()?.SetUI(rank, f.playerName.stringValue, stage, skillStr, timestamp);
+            go.GetComponent<LeaderboardEntryUI>()?.SetUI(i + 1, f.playerName.stringValue, stage, skillStr, timestamp);
         }
+        isLoading = false;
     }
 
-    public IEnumerator SaveEntry(string playerName, int rank, int stage, List<string> skills)
+    public IEnumerator SaveEntry(string playerName, int stage, double clearTime, List<string> skills)
     {
-        string body = BuildDocumentJson(playerName, rank, stage, skills);
+        string body = BuildDocumentJson(playerName, stage, clearTime, skills);
         byte[] bodyBytes = Encoding.UTF8.GetBytes(body);
 
         string url = $"{BaseUrl}?key={ApiKey}";
@@ -76,7 +94,6 @@ public class FirebaseLeaderboardManager : MonoBehaviour
             Debug.Log($"[Firebase] 저장 완료: {playerName}");
             yield return LoadLeaderboard();
         }
-
         else
         {
             Debug.LogError($"[Firebase] 저장 실패: {req.error}\n{req.downloadHandler.text}");
@@ -89,9 +106,10 @@ public class FirebaseLeaderboardManager : MonoBehaviour
             Destroy(t.gameObject);
     }
 
-    static string BuildDocumentJson(string playerName, int rank, int stage, List<string> skills)
+    static string BuildDocumentJson(string playerName, int stage, double clearTime, List<string> skills)
     {
         string timestamp = System.DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
+        string clearTimeStr = clearTime.ToString("F3", System.Globalization.CultureInfo.InvariantCulture);
 
         var skillValues = new StringBuilder();
         for (int i = 0; i < skills.Count; i++)
@@ -102,8 +120,8 @@ public class FirebaseLeaderboardManager : MonoBehaviour
 
         return "{\"fields\":{" +
             $"\"playerName\":{{\"stringValue\":\"{Escape(playerName)}\"}}," +
-            $"\"rank\":{{\"integerValue\":\"{rank}\"}}," +
             $"\"stage\":{{\"integerValue\":\"{stage}\"}}," +
+            $"\"clearTime\":{{\"doubleValue\":{clearTimeStr}}}," +
             $"\"timestamp\":{{\"timestampValue\":\"{timestamp}\"}}," +
             $"\"skill\":{{\"arrayValue\":{{\"values\":[{skillValues}]}}}}" +
             "}}";
@@ -118,13 +136,14 @@ public class FirebaseLeaderboardManager : MonoBehaviour
 [System.Serializable] class LeaderboardDocFields
 {
     public FirestoreStringVal playerName;
-    public FirestoreIntVal rank;
     public FirestoreIntVal stage;
+    public FirestoreDoubleVal clearTime;
     public FirestoreTimestampVal timestamp;
     public FirestoreArrayVal skill;
 }
 [System.Serializable] class FirestoreStringVal { public string stringValue; }
 [System.Serializable] class FirestoreIntVal { public string integerValue; }
+[System.Serializable] class FirestoreDoubleVal { public string doubleValue; }
 [System.Serializable] class FirestoreTimestampVal { public string timestampValue; }
 [System.Serializable] class FirestoreArrayVal { public FirestoreArrayValues arrayValue; }
 [System.Serializable] class FirestoreArrayValues { public FirestoreStringVal[] values; }

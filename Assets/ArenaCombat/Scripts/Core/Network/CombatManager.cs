@@ -60,7 +60,9 @@ namespace ArenaCombat.Core.Network
         // Events
         public event Action<ulong, ulong> OnPlayerKill;          // (killerId, victimId)
         public event Action<ulong, ulong, float> OnDamageDealt;  // (attackerId, victimId, damage)
+#pragma warning disable CS0067
         public event Action<int, int> OnTeamScoreChanged;        // (team1Score, team2Score)
+#pragma warning restore CS0067
 
         private void Awake()
         {

@@ -8,7 +8,9 @@ namespace DissolveExample
     {
         // Start is called before the first frame update
         List<Material> materials = new List<Material>();
+#pragma warning disable CS0414
         bool PingPong = false;
+#pragma warning restore CS0414
         void Start()
         {
             var renders = GetComponentsInChildren<Renderer>();
